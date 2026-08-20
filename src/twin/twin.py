@@ -23,11 +23,18 @@ Usage:
 from __future__ import annotations
 
 import json
+import sys
 import time
 import threading
+from pathlib import Path
 from typing import Dict, List
 
 import paho.mqtt.client as mqtt
+
+# Allow both `python src/twin/twin.py` and `python -m src.twin.twin`:
+# ensure the repo root is importable so `src.twin.contracts` resolves.
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.twin.contracts import SCADAPayload
 
