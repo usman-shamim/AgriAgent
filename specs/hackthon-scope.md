@@ -36,6 +36,17 @@ AgriAgent is an autonomous industrial supervisory control and data acquisition (
 * **In Scope:** Real-time environmental data ingestion, kinetic degradation modeling, multi-agent reasoning, deterministic tool calling via Model Context Protocol (MCP) or OpenAI Agent SDK, JSON payload dispatch over local MQTT, and an asynchronous Python digital twin simulating fluid mechanics and tank levels.
 * **Out of Scope for Stage Demo:** Custom PCB manufacturing, closed-loop feedback from physical chemical titration probes, and high-voltage three-phase motor control.
 
+### Deployment Playbook — Four Extension Paths (keep the build tight)
+
+The slide's four extension paths map directly onto the AgriAgent build to lock scope before build time starts:
+
+1. **One Decision** — the single decision is the **dynamic formulation ratio**. Visual pest detection and yield prediction are explicitly dropped. The entire build focuses on calculating the exact mix of biopesticide, UV stabilizer, and surfactant from real-time weather.
+2. **Minimum Data** — the minimum viable dataset is **UV index, ambient temperature, and relative humidity**. No farmer manual entry: the Perception Agent pulls these directly from a local weather API (Open-Meteo) or simulated field telemetry (MQTT).
+3. **Actionable Prototype** — the actionable output is the **MQTT payload**. The Formulation Agent computes the recipe, the SCADA Agent dispatches a strict JSON command, and the action is the digital-twin pump dispensing the exact volume. One actionable artifact, end to end.
+4. **Validate Savings** — the pitch deck carries validation: the kinetics models prove dynamic encapsulation extends biopesticide half-life, tied to the 90% synthetic-pesticide-volume-reduction target and direct per-acre input cost savings.
+
+**Scope guard:** anything that is not one of these four paths is out of scope until after the demo.
+
 ---
 
 ## 2. Chemical Kinetics and Mathematical Modeling
