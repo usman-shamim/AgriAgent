@@ -1,8 +1,13 @@
-# AgriAgent — kinetics pipeline dependencies
-# Pure standard library; no third-party packages required for kinetics_pipeline.py
-# Add these as the agentic/dashboard layers are built:
-# paho-mqtt>=2.0       # MQTT client for broker dispatch (hackthon-scope.md section 5)
-# pydantic>=2.5        # Schema validation for telemetry/recipe/pump contracts
-# openai-agents>=0.0.6 # OpenAI Agent SDK (design-and-implementation.md)
-# streamlit>=1.35      # SCADA dashboard presentation layer
-# requests>=2.31       # HTTP client if urllib is replaced in later versions
+# AgriAgent — Python dependencies
+# Install: python3 -m venv .venv && .venv/bin/pip install -r specs/requirements.txt
+
+# MCP SCADA tool server (src/mcp_server_scada.py)
+mcp>=1.2                 # Model Context Protocol SDK (stdio transport)
+paho-mqtt>=2.0           # MQTT client for broker dispatch
+pydantic>=2.5            # Schema validation for telemetry/recipe/pump contracts
+
+# Kinetics pipeline (specs/kinetics_pipeline.py) is pure standard library.
+
+# Coming with the agentic/dashboard layers:
+# openai-agents>=0.0.6   # OpenAI Agent SDK (design-and-implementation.md)
+# streamlit>=1.35        # SCADA dashboard presentation layer
