@@ -1,6 +1,6 @@
 # Design and Implementation of an Agentic AI System for Low-Pesticide Agriculture and Dynamic Bio-Pesticide Formulation
 
-## Agribusiness and Chemical Technology Landscape
+## 1. Agribusiness and Chemical Technology Landscape
 
 Chemical and physical stability represent the primary operational bottlenecks in transitioning global agricultural practices from synthetic, persistent organochemicals to biologically derived pest control agents. Unlike stable, synthetic small-molecule pesticides, biopesticides—including delicate bioactive peptides, live bacterial spores, fungal conidia, and botanical extracts—are highly susceptible to rapid environmental degradation when exposed to field conditions.
 
@@ -49,7 +49,7 @@ For highly sensitive peptide and protein biopesticides, short, synthetic surfact
 
 When dissolved in aqueous media, SLPs self-assemble above their critical aggregation concentration (CAC) to form nanovesicles, micelles, or nanotubes. A representative SLP, $(Ala)_9-Arg$ ($\text{A9R}$), self-assembles into stable $\beta$-sheet fiber networks that coat oil-in-water emulsion droplets. This nanostructured coating provides physical stabilization against thermal denaturation and coalescence, enables selective antimicrobial action against Gram-negative pathogens such as Pseudomonas aeruginosa, and allows for controlled release via protease-responsive (elastase) de-emulsification.
 
-## South Asian Agribusiness Market Dynamics and Crop Profiles
+## 2. South Asian Agribusiness Market Dynamics and Crop Profiles
 
 In the agricultural landscape of South Asia, and specifically Pakistan, the transition from persistent synthetic organochemicals to dynamically formulated biopesticides presents significant commercial opportunities. This transition is driven by increasingly strict export regulations, pest resistance, and rising input costs.
 
@@ -88,7 +88,7 @@ In the Punjab and Sindh cotton belts, the excessive use of broad-spectrum synthe
 
 By integrating simple agronomic tools (such as yellow sticky traps) with target-specific bio-pesticides (including Helicoverpa armigera Nucleopolyhedrovirus / HaNPV, Beauveria bassiana, and azadirachtin), chemical costs can be reduced significantly. Furthermore, optimizing inputs through soil testing and organic amendments has been shown to increase cotton yields by $5\%$ while reducing fertilizer costs by $\text{PKR } 5,000 \text{ to } 7,000$ per acre.
 
-## System Architecture and Agentic Workflow (OpenAI Agent SDK / MCP)
+## 3. System Architecture and Agentic Workflow (OpenAI Agent SDK / MCP)
 
 The autonomous formulation and dosing system is orchestrated by a multi-agent framework built on the OpenAI Agent SDK, using the Model Context Protocol (MCP) to bridge the cloud-based AI agents with physical field actuators.
 
@@ -119,7 +119,7 @@ The system uses a collaborative multi-agent architecture where specialized agent
                                        ▼
 ┌───────────────────────────────────────────────────────────────────────────────┐
 │                           Industrial IoT Broker                               │
-│                         - EMQX MQTT Broker Platform -                         │
+│                         - Eclipse Mosquitto MQTT Broker -                    │
 └──────────────────────────────────────┬────────────────────────────────────────┘
                                        │ (Publish / Subscribe)
                                        ▼
@@ -190,14 +190,15 @@ The digital twin of the physical formulation system is defined via the **Device 
 This integration can be deployed using two different architectural approaches:
 
 - **Device Proxy Solution**: Standard edge devices publish their sensor data and subscribe to commands using standard MQTT topics. A centralized MCP Server, acting as a proxy, subscribes to these topics, maintains a registry of the devices, and exposes their states as standardized MCP resources and tools. This approach allows legacy SCADA and PLC infrastructure to be integrated with AI agents without requiring hardware upgrades.
-- **Native Solution**: High-performance, edge-compute platforms (such as an industrial Raspberry Pi or smart PLC) run a native MCP Server directly on the device. The device communicates directly with the EMQX broker using the native MCP over MQTT SDK, enabling end-to-end intelligent control.
+- **Native Solution**: High-performance, edge-compute platforms (such as an industrial Raspberry Pi or smart PLC) run a native MCP Server directly on the device. The device communicates directly with the Eclipse Mosquitto broker using the native MCP over MQTT SDK, enabling end-to-end intelligent control.
 
-To ensure structured, secure, and discoverable communication across the network, the system follows standard MQTT topic naming conventions:
+To ensure structured, secure, and discoverable communication across the network, the system follows the canonical MQTT topic naming conventions:
 
-- **Device Registration**: `$ai/{DOMAIN}/{GROUP}/d/{DEVICE_ID}` is used for automatic discovery and status monitoring.
-- **Rule Coordination**: `$ai/{DOMAIN}/{GROUP}/r/{RULE_ID}` handles automated safety rules and coordination logic.
+- **Ingestion Telemetry**: `agri/telemetry/{zone_id}/environment` carries field sensor data to the Perception Agent.
+- **SCADA Actuator Setpoint**: `agri/actuator/{zone_id}/dosing_dispatch` carries validated recipe commands to the dosing rig or digital twin.
+- **Digital Twin State Feedback**: `agri/digital_twin/{zone_id}/tank_status` publishes reservoir levels back to the operator interface.
 
-Industrial administrators use the EMQX broker's centralized authentication, authorization, and load-balancing services to manage service routing, restrict access to authorized agents, and scale MCP servers horizontally while maintaining state consistency.
+Industrial administrators use the Eclipse Mosquitto broker's centralized authentication, authorization, and load-balancing services to manage service routing, restrict access to authorized agents, and scale MCP servers horizontally while maintaining state consistency.
 
 The physical MCP server is implemented in Python, leveraging FastAPI to support both Streamable HTTP/SSE and standard stdio transports. The following skeleton shows the implementation structure using the v2 MCP Python SDK:
 
@@ -214,7 +215,7 @@ def set_pump_speed(pump_id: int, speed_rpm: int) -> str:
     """
     Directly writes a rotational speed command (RPM) to a specified dosing pump.
     """
-    # In practice, this converts parameters to an MQTT payload and publishes to EMQX
+    # In practice, this converts parameters to an MQTT payload and publishes to Mosquitto
     return f"Success: Dosing pump {pump_id} set point updated to {speed_rpm} RPM."
 
 async def run_server():
@@ -230,7 +231,7 @@ if __name__ == "__main__":
     anyio.run(run_server)
 ```
 
-## Hardware and Industrial Automation Implementation
+## 4. Hardware and Industrial Automation Implementation
 
 To move the system from a simulated framework to a physical proof-of-concept, a low-cost, precise prototyping hardware stack was developed.
 
@@ -247,13 +248,13 @@ The hardware demonstration rig simulates an automated multi-channel chemical dos
 |---|---|---|---|
 | ESP32 DevKit V1 | Dual-core $240\text{MHz}$ CPU, integrated Wi-Fi | FreeRTOS thread scheduler | N/A (Master Unit) |
 | L298N Driver | Dual H-bridge, max $2\text{A}$ per channel | PWM & digital GPIO direction | GPIO 12 (PWM A), GPIO 13 (IN1), GPIO 14 (PWM B), GPIO 27 (IN3) |
-| 12V Peristaltic Pumps | $100 \text{ ml/min}$ nominal flow rate ($1.66 \text{ ml/sec}$) | High-current analog drive | Pump 1 & 2 via L298N; Pump 3 & 4 via Relay Board |
+| 12V Peristaltic Pumps | $600 \text{ ml/min}$ nominal flow rate ($10 \text{ ml/sec}$; carrier water at $50 \text{ ml/sec}$) | High-current analog drive | Pump 1 & 2 via L298N; Pump 3 & 4 via Relay Board |
 | 4-Channel Relay Board | Optoisolated coil protection, $10\text{A}$ contacts | $5\text{V}$ digital logic active-low | GPIO 18 (Relay 1), GPIO 19 (Relay 2) |
 | LM2596 Buck Converter | Adjustable output, $3\text{A}$ max continuous | Step-down ($12\text{V}$ to $5\text{V}$) | Direct DC bus power |
 
 ### Python OpenAI Agent SDK MQTT Integration
 
-The following script implements a complete multi-agent formulation loop using the OpenAI Agent SDK. When invoked, the agent calculates the required chemical ratios based on incoming environmental conditions, validates the recipe, and publishes a structured JSON control payload to the EMQX broker to actuate the physical pumps.
+The following script implements a complete multi-agent formulation loop using the OpenAI Agent SDK. When invoked, the agent calculates the required chemical ratios based on incoming environmental conditions, validates the recipe, and publishes a structured JSON control payload to the Eclipse Mosquitto broker to actuate the physical pumps.
 
 ```python
 import os
@@ -295,13 +296,15 @@ def publish_dosing_transaction(recipe_payload_json: str) -> str:
         v_stabilizer = recipe.batch_volume_ml * recipe.stabilizer_ratio
         v_water = recipe.batch_volume_ml * (1.0 - combined_ratio)
 
-        # Convert volumes to runtimes based on calibrated pump flow rate (1.66 ml/sec)
-        calibration_factor = 1.66
+        # Convert volumes to runtimes based on calibrated pump flow rates
+        # (chemical pumps 10 ml/sec; carrier water 50 ml/sec)
+        flow_chemical = 10.0
+        flow_water = 50.0
         runtimes = {
-            "pump_1_active_seconds": round(v_active / calibration_factor, 2),
-            "pump_2_surfactant_seconds": round(v_surfactant / calibration_factor, 2),
-            "pump_3_stabilizer_seconds": round(v_stabilizer / calibration_factor, 2),
-            "pump_4_water_seconds": round(v_water / calibration_factor, 2)
+            "pump_1_active_seconds": round(v_active / flow_chemical, 2),
+            "pump_2_surfactant_seconds": round(v_surfactant / flow_chemical, 2),
+            "pump_3_stabilizer_seconds": round(v_stabilizer / flow_chemical, 2),
+            "pump_4_water_seconds": round(v_water / flow_water, 2)
         }
 
         # Build the structured, device-compliant payload
@@ -318,11 +321,11 @@ def publish_dosing_transaction(recipe_payload_json: str) -> str:
             "execution_runtimes_sec": runtimes
         }
 
-        # Publish the payload to the EMQX broker
-        mqtt_broker = "broker.emqx.io"
-        mqtt_port = 1883
+        # Publish the payload to the local Eclipse Mosquitto broker
+        mqtt_broker = os.getenv("AGRIA_MQTT_BROKER", "localhost")
+        mqtt_port = int(os.getenv("AGRIA_MQTT_PORT", "1883"))
         # Use standard topic naming conventions for device registration and commands
-        target_topic = "$ai/agtech/zone1/d/peristaltic_dosing_rig_01"
+        target_topic = "agri/actuator/zone_north/dosing_dispatch"
 
         client = mqtt.Client()
         client.connect(mqtt_broker, mqtt_port, 60)
@@ -347,10 +350,10 @@ formulator_agent = Agent(
     instructions=(
         "You are an expert chemical process automation agent. Your role is to compute optimal "
         "biopesticide formulations based on environmental conditions and control physical dosing pumps. "
-        "Follow these rules precisely:\n"
-        "1. Active ingredient ratio is always fixed at 0.35 (35%).\n"
-        "2. If the environmental UV index is >= 6.0, set the stabilizer_ratio to 0.15 (15%), else set to 0.05.\n"
-        "3. If relative humidity is < 40.0%, set the surfactant_ratio to 0.10 (10%), else set to 0.05.\n"
+        "Follow these rules precisely (deterministic, per the canonical formulas):\n"
+        "1. Active ingredient ratio is always fixed at 0.08 (8%).\n"
+        "2. UV stabilizer ratio scales with UV: stabilizer_pct = min(3.0, 0.25 + 0.25 * UV) % w/v.\n"
+        "3. Surfactant ratio compensates for evaporation: surf_pct = min(0.20, 0.05 * (1 + 1.2 * (1 - RH/100)) * (T/293.15)^1.5) % v/v.\n"
         "4. Water acts as the remaining carrier volume to make up 1.0 (100%).\n"
         "Calculate these ratios, build the FormulationRecipe, and call the publish_dosing_transaction tool."
     ),
@@ -372,7 +375,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-## ROI, Metrics and Feasibility Analysis
+## 5. ROI, Metrics and Feasibility Analysis
 
 Transitioning from broad-spectrum synthetic organochemicals to dynamically formulated biopesticides provides quantifiable economic and ecological benefits.
 
@@ -406,7 +409,7 @@ Direct Savings:       ███████████████████�
 - **Reduction in Groundwater Contamination**: Synthetic organochemicals exhibit high soil mobility, leading to the contamination of local aquifers via runoff and leaching. In contrast, biopesticides degrade naturally without leaving persistent, toxic residues. Encapsulating these bio-agents in porous sodium lignosulfonate microcapsules regulates active ingredient release and minimizes premature runoff, reducing environmental leaching.
 - **Conservation of Beneficial Insects and Pollinators**: Synthetic insecticides are non-selective, resulting in high mortality rates among beneficial insects and pollinators, which can lead to secondary pest outbreaks. Conversely, target-specific biopesticides, such as Bacillus thuringiensis and host-specific NPV baculoviruses, selectively target pest larvae while leaving non-target beneficial organisms unharmed.
 
-## Hackathon Pitch and Demo Strategy
+## 6. Hackathon Pitch and Demo Strategy
 
 Successfully presenting this project at the Bano Qabil AI Hackathon requires bridging deep chemical technology with state-of-the-art agentic AI systems.
 
@@ -421,7 +424,7 @@ To captivate the evaluation panel, the developer must present a reliable, visual
 │   ┌───────────────────────┐            ┌──────────────────────────┐    │
 │   │   Operator Terminal   │            │   Physical Dosing Rig    │    │
 │   │   - Interactive input │───────────►│   - Red/Blue/Yellow/Clear│    │
-│   │   - Live Agent logs   │ (EMQX MQTT)│     colored reservoirs   │    │
+│   │   - Live Agent logs   │ (MQTT)      │     colored reservoirs   │    │
 │   │   - Tracing spans     │            │   - 12V Peristaltic pumps│    │
 │   └───────────────────────┘            └────────────┬─────────────┘    │
 │                                                     │                  │
@@ -437,10 +440,10 @@ To captivate the evaluation panel, the developer must present a reliable, visual
   - Reservoir 3 (Sodium Lignosulfonate Stabilizer): **Red**
   - Reservoir 4 (Distilled Water Carrier): **Clear**
   - Place the output tubes of all four pumps into a single glass mixing beaker at the front of the stage.
-- **Local Networking**: Run a local EMQX MQTT broker on the presenter's laptop and configure a dedicated Wi-Fi router. This ensures stable communication between the laptop and the ESP32, avoiding the high latency and interference of shared public venue networks.
+- **Local Networking**: Run a local Eclipse Mosquitto MQTT broker on the presenter's laptop and configure a dedicated Wi-Fi router. This ensures stable communication between the laptop and the ESP32, avoiding the high latency and interference of shared public venue networks.
 - **Execution Sequence**:
   1. Enter an environmental scenario on the laptop interface, such as: *"High temperature and intense UV-B index of 8.5 detected on a Pusa 1121 Basmati crop in Punjab."* Project the terminal onto the stage screen, showing the OpenAI Agent SDK processing the command. The Stoichiometry Agent reasons through the UV degradation risks, while the Safety Agent confirms that the calculated stabilizer ratio is safe.
-  2. The SCADA Agent compiles the recipe into runtimes (e.g., Pump 1: $72\text{s}$, Pump 2: $24\text{s}$, Pump 3: $36\text{s}$, Pump 4: $108\text{s}$) and publishes this payload to the `ai/agtech/zone1/d/peristaltic_dosing_rig_01` topic.
+  2. The SCADA Agent compiles the recipe into runtimes (e.g., Pump 1: $3.2\text{s}$, Pump 2: $0.95\text{s}$, Pump 3: $0.04\text{s}$, Pump 4: $7.16\text{s}$ for a $400\text{ mL}$ batch at UV 8.5) and publishes this payload to the `agri/actuator/zone_north/dosing_dispatch` topic.
   3. The ESP32 immediately registers the payload, triggering the colored pumps. As the dyed liquids flow into the mixing beaker, the changing colors provide immediate, visual proof of the dynamic formulation process.
 
 ### Structured Three-Minute Pitch Script
@@ -455,13 +458,13 @@ To captivate the evaluation panel, the developer must present a reliable, visual
 
 **1:31 - 2:15: The Live Actuation**
 
-> "We can see this in action on our stage demonstration rig. Our local sensors have detected a high UV index of 8.2 and dry conditions. Our Agentic controller processes these inputs and calculates the optimal recipe, maintaining active ingredients at $35\%$ while increasing the stabilizer to $15\%$ and surfactant to $10\%$. The SCADA Agent maps these parameters directly to industrial MQTT topics. Instantly, our physical ESP32 controller activates the dosing pumps. Watch as these color-coded components are precisely blended into our mixing beaker, proving that we can bridge digital reasoning with real-world physical execution."
+> "We can see this in action on our stage demonstration rig. Our local sensors have detected a high UV index of 8.2 and dry conditions. Our Agentic controller processes these inputs and calculates the optimal recipe — holding the active ingredient at 8%, then scaling the UV stabilizer up to protect against photolysis and boosting the surfactant so droplets cling to the leaves in dry air. The SCADA Agent maps these parameters directly to industrial MQTT topics. Instantly, our physical ESP32 controller activates the dosing pumps. Watch as these color-coded components are precisely blended into our mixing beaker, proving that we can bridge digital reasoning with real-world physical execution."
 
 **2:16 - 3:00: Agribusiness ROI & Market Impact**
 
 > "Our system delivers clear economic benefits. By replacing blanket chemical applications with targeted, bio-formulated micro-dosing, we achieve a $90\%$ reduction in chemical volume. This saves Pakistani farmers an average of $\text{PKR } 45,000$ per acre annually. For rice and chili exporters, this technology eliminates the risk of costly border rejections, protecting shipments valued at up to $\$90,000$ per consignment. By using the Model Context Protocol, our system integrates seamlessly with legacy SCADA systems and modern IoT brokers, avoiding expensive hardware overhauls. We are not just building software; we are connecting AI directly to physical infrastructure to make agriculture sustainable, compliant, and profitable. Thank you."
 
-## Conclusions
+## 7. Conclusions
 
 Implementing an agentic AI system for low-pesticide agriculture addresses critical economic, operational, and ecological challenges in modern agribusiness. This technology helps bridge the gap between chemical process engineering and physical automation.
 
@@ -488,7 +491,7 @@ Implementing an agentic AI system for low-pesticide agriculture addresses critic
 
 - **Deploying the Telemetry Network**: Implement edge sensor nodes across agricultural zones to continuously monitor ambient pH, UV index, wind speed, and relative humidity, transmitting this data directly to the environmental agent.
 - **Integrating Safety Guardrails**: Configure the safety agent to cross-verify all calculated chemical concentrations against regional environmental and maximum residue limit (MRL) standards prior to any physical execution.
-- **Establishing the Protocol Bridge**: Deploy the Model Context Protocol (MCP) over MQTT using an EMQX broker to establish low-latency, secure communication between the cloud-based AI agents and physical field actuators.
+- **Establishing the Protocol Bridge**: Deploy the Model Context Protocol (MCP) over MQTT using an Eclipse Mosquitto broker to establish low-latency, secure communication between the cloud-based AI agents and physical field actuators.
 - **Optimizing Dosing Control**: Program edge controllers (e.g., ESP32 or PLCs) to convert incoming agent instructions into precise pump speeds and runtimes, ensuring accurate stoichiometric blending.
 
 By establishing this integrated workflow, agricultural operations can systematically reduce synthetic chemical usage, protect crucial export corridors, and improve overall crop health and sustainability.

@@ -20,6 +20,8 @@ env/
 # ---- Data artifacts (generated) ----
 data/*.csv
 !data/.gitkeep
+!data/synthetic_biopesticide_telemetry.csv
+!data/agriagent_scada_dosing_trajectories.csv
 *.parquet
 *.h5
 *.db

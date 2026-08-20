@@ -102,12 +102,12 @@ The AI layer runs four specialized agents orchestrated sequentially with strict 
 |                                                                             |
 | 1. Perception Agent                                                         |
 |    - Reads telemetry (UV=9.2, Temp=38C, RH=32%)                             |
-|    - Computes degradation threat: k_deg = 0.284 hr^-1 (t_1/2 = 2.44 hrs)    |
+|    - Computes degradation threat: k_deg = 0.0785 hr^-1 (t_1/2 = 8.83 hrs)   |
 |                          |                                                  |
 |                          v                                                  |
 | 2. Stoichiometry & Formulation Agent                                        |
 |    - Computes recipe for target batch volume (e.g., 500 mL)                 |
-|    - Recipe: Bio=45 mL, Lignin=12.5 mL, Surfactant=4.5 mL, Water=438 mL     |
+|    - Recipe: Bio=40.0 mL, Lignin=12.75 mL, Surfactant=0.50 mL, Water=446.75 |
 |                          |                                                  |
 |                          v                                                  |
 | 3. Safety & Compliance Agent                                                |
@@ -189,40 +189,40 @@ class SCADAPayload(BaseModel):
   "zone_id": "zone_north",
   "safety_validated": true,
   "recipe": {
-    "biopesticide_ml": 45.0,
-    "uv_stabilizer_ml": 14.5,
-    "surfactant_ml": 4.2,
-    "carrier_water_ml": 436.3,
+    "biopesticide_ml": 40.0,
+    "uv_stabilizer_ml": 12.75,
+    "surfactant_ml": 0.5,
+    "carrier_water_ml": 446.75,
     "total_batch_volume_ml": 500.0
   },
   "commands": [
     {
       "pump_id": 1,
       "chemical_name": "biopesticide",
-      "volume_ml": 45.0,
+      "volume_ml": 40.0,
       "flow_rate_ml_per_sec": 10.0,
-      "duration_sec": 4.5
+      "duration_sec": 4.0
     },
     {
       "pump_id": 2,
       "chemical_name": "uv_stabilizer",
-      "volume_ml": 14.5,
+      "volume_ml": 12.75,
       "flow_rate_ml_per_sec": 10.0,
-      "duration_sec": 1.45
+      "duration_sec": 1.27
     },
     {
       "pump_id": 3,
       "chemical_name": "surfactant",
-      "volume_ml": 4.2,
+      "volume_ml": 0.5,
       "flow_rate_ml_per_sec": 10.0,
-      "duration_sec": 0.42
+      "duration_sec": 0.05
     },
     {
       "pump_id": 4,
       "chemical_name": "carrier_water",
-      "volume_ml": 436.3,
+      "volume_ml": 446.75,
       "flow_rate_ml_per_sec": 50.0,
-      "duration_sec": 8.73
+      "duration_sec": 8.94
     }
   ]
 }
@@ -364,10 +364,10 @@ def calculate_recipe(batch_vol_ml: float, uv_index: float, temp_c: float, rh_pct
 
 # --- MCP / SCADA ACTION TOOL ---
 def dispatch_scada_dosing(zone_id: str, recipe: dict) -> str:
-    # Safety Validation Gate
-    surf_ratio = recipe["surfactant_ml"] / recipe["total_batch_volume_ml"]
-    if surf_ratio > 0.0025: # > 0.25% hard cutoff
-        return "[SAFETY ERROR] Surfactant exceeds phytotoxicity threshold."
+    # Safety Validation Gate — surfactant concentration as % v/v vs 0.20% cap
+    surf_pct = (recipe["surfactant_ml"] / recipe["total_batch_volume_ml"]) * 100.0
+    if surf_pct > 0.20:  # > 0.20% v/v hard cutoff
+        return "[SAFETY ERROR] Surfactant exceeds phytotoxicity threshold (0.20%)."
     
     commands = [
         {"pump_id": 1, "chemical_name": "biopesticide", "volume_ml": recipe["biopesticide_ml"], "flow_rate_ml_per_sec": 10.0, "duration_sec": round(recipe["biopesticide_ml"] / 10.0, 2)},

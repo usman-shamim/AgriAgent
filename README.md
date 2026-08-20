@@ -23,9 +23,9 @@ The problem it solves: biopesticides are safe but fragile. Solar UV and heat des
                                 v
 ┌──────────────────────────────────────────────────────────────────┐
 │                  MIDDLEWARE & PROTOCOL HIGHWAY                    │
-│                MQTT Broker (Eclipse Mosquitto / EMQX)             │
+│                MQTT Broker (Eclipse Mosquitto)                    │
 └───────────────┬───────────────────────────────┬──────────────────┘
-                │ agri/actuator/+/setpoint      │ telemetry
+                │ agri/actuator/+/dosing_dispatch│ telemetry
                 v                               v
 ┌──────────────────────────────┐  ┌──────────────────────────────┐
 │      DIGITAL TWIN (Sim)      │  │     PHYSICAL RIG (Optional)   │
@@ -42,19 +42,26 @@ The problem it solves: biopesticides are safe but fragile. Solar UV and heat des
 
 ### The science (deterministic, not LLM-guessed)
 
-- **Kinetics**: `C(t) = C₀·e^(−k·t)` with `k = k₀·(1+α·UV)·e^(−(Ea/R)(1/T−1/T₀))` — Arrhenius thermal + UV photolysis scaling.
+- **Kinetics**: `C(t) = C₀·e^(−k·t)` with `k = k₀·(1+α·UV)·e^(−(Ea/R)(1/T−1/T₀))` — Arrhenius thermal + UV photolysis scaling, per-hour units.
 - **UV stabilizer**: `C_lignin = min(3.0%, 0.25% + 0.25%·UV)` — more sun, more lignosulfonate, capped at solubility limit.
 - **Surfactant**: evaporative compensation against relative humidity and heat, capped at 0.20% to prevent phytotoxicity.
-- **Kinetics pipeline**: fetches real hourly weather for Multan (Open-Meteo) and exports a Kaggle-ready degradation dataset.
+- **Active concentrate**: fixed 8% v/v of batch; carrier water balances to 100%.
+- **Pump calibration**: 10 mL/s (pumps 1–3), 50 mL/s (carrier water); durations computed from volume ÷ flow.
+
+## What's built
+
+- **`src/mcp_server_scada.py`** — the MCP SCADA tool server. Three tools (`compute_degradation_kinetics`, `generate_chemical_recipe`, `dispatch_scada_dosing`) with Pydantic-validated schemas, the confirmed formulas, and a safety guardrail. Run `--selftest` or `--demo`; serves over MCP stdio.
+- **`specs/kinetics_pipeline.py`** — fetches real hourly weather for Multan (Open-Meteo) and exports a Kaggle-ready degradation dataset.
+- **`specs/scada_trajectory_pipeline.py`** — generates 500 synthetic agent-formulation + MQTT-actuation traces (the SCADA trajectories dataset).
+- **Two Kaggle datasets** — `data/synthetic_biopesticide_telemetry.csv` (kinetics) and `data/agriagent_scada_dosing_trajectories.csv` (dosing decisions).
 
 ## Repository layout
 
 ```
-src/agents/     Agent pipeline (Perception → Formulation → Safety → Actuator)
-src/twin/       Digital twin simulation engine (virtual SCADA rig)
+src/            MCP SCADA server + agent pipeline (agents/, twin/)
 dashboard/      Streamlit / Next.js SCADA interface
-specs/          Technical specifications & design docs
-data/           Generated datasets (e.g. synthetic_biopesticide_telemetry.csv)
+specs/          Technical specs, design docs, and data pipeline scripts
+data/           Generated datasets (kinetics + SCADA trajectories)
 docs/           Wayfinding map, ADRs, domain docs
 scripts/        Utility scripts (telemetry sim, demo helpers)
 ```
@@ -62,18 +69,25 @@ scripts/        Utility scripts (telemetry sim, demo helpers)
 ## Getting started
 
 ```bash
+# Install dependencies (MCP SDK, paho-mqtt, pydantic)
+python3 -m venv .venv && .venv/bin/pip install -r specs/requirements.txt
+
+# MCP SCADA server self-test (pure math, no broker needed)
+.venv/bin/python src/mcp_server_scada.py --selftest
+
 # Generate the kinetics benchmark dataset (real Multan weather)
-python3 specs/kinetics_pipeline.py --days 7 --output data/synthetic_biopesticide_telemetry.csv
+.venv/bin/python specs/kinetics_pipeline.py --days 7 --output data/synthetic_biopesticide_telemetry.csv
 
-# Offline mode (no network) — deterministic synthetic telemetry
-python3 specs/kinetics_pipeline.py --offline --days 2
+# Generate the SCADA trajectories dataset (500 runs)
+.venv/bin/python specs/scada_trajectory_pipeline.py --runs 500 --output data/agriagent_scada_dosing_trajectories.csv
+
+# Offline kinetics mode (no network) — deterministic synthetic telemetry
+.venv/bin/python specs/kinetics_pipeline.py --offline --days 2
 ```
-
-The pipeline is pure standard library — no install needed. MQTT broker, agent runtime, and dashboard dependencies are listed in `specs/requirements.txt` and will land as those layers are built.
 
 ## Roadmap
 
-The build is charted on the [wayfinder map](docs/wayfinder/map.md) — a set of decision tickets on GitHub Issues covering broker choice (Mosquitto vs EMQX), pump flow-rate calibration, the digital twin contract, and demo strategy. See the open tickets for what's next.
+The build is charted on the wayfinder map (GitHub Issues #1) — decision tickets covering the digital twin contract, the agent runtime (OpenAI Agent SDK vs function-calling), and the demo dashboard. Broker choice, pump calibration, formulation policy, and the kinetics constants are settled. See the open tickets for what's next.
 
 ## License
 
