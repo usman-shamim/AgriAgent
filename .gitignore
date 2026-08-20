@@ -1,0 +1,41 @@
+# ---- Command Code / agent tooling ----
+.commandcode/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.python-version
+
+# ---- Environment & secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- Data artifacts (generated) ----
+data/*.csv
+!data/.gitkeep
+*.parquet
+*.h5
+*.db
+*.sqlite
+*.sqlite3
+
+# ---- IDE / OS ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ---- Logs & caches ----
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
