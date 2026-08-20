@@ -133,7 +133,7 @@ The AI layer runs four specialized agents orchestrated sequentially with strict 
 
 ## 4. MCP Tools and Pydantic Schemas
 
-Below are the production-grade Pydantic models and tool contracts used by the agents.
+> **Note (ticket #6 resolution):** the canonical, versioned schemas now live in `src/twin/contracts.py` and are shared by the MCP server, the digital twin, and the physical rig. The models below are retained as the spec's reference snapshot; the module is authoritative. `duration_sec` is informational (the twin recomputes from its own flow table) and `sim_speed` (default 10) is the explicit acceleration factor.
 
 ```python
 from pydantic import BaseModel, Field

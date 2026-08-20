@@ -234,6 +234,15 @@ except ImportError:  # pragma: no cover
     HAS_PYDANTIC = False
     BaseModel = object  # type: ignore
 
+# Shared SCADA contract (src/twin/contracts.py, ticket #6). Imported lazily so
+# the pure-math core keeps working when the contracts' deps are absent.
+try:
+    from src.twin.contracts import ChemicalRecipe, PumpCommand, SCADAPayload  # type: ignore
+    HAS_CONTRACTS = True
+except ImportError:  # pragma: no cover
+    HAS_CONTRACTS = False
+    ChemicalRecipe = PumpCommand = SCADAPayload = None  # type: ignore
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -265,6 +274,7 @@ def _pydantic_schemas() -> Dict[str, type]:
         ambient_temp_c: float = Field(ge=-10.0, le=55.0, description="Temperature in Celsius")
         relative_humidity_pct: float = Field(ge=5.0, le=100.0, description="Relative humidity percentage")
         dispatch: bool = Field(default=False, description="Publish to MQTT broker (requires broker running)")
+        sim_speed: int = Field(default=10, ge=1, le=1000, description="Digital twin simulation acceleration factor")
 
         @field_validator("relative_humidity_pct")
         @classmethod
@@ -302,7 +312,18 @@ def _publish_scada_payload(zone_id: str, payload: Dict[str, Any]) -> Dict[str, A
     return {"published": True, "topic": topic, "broker": f"{MQTT_BROKER_DEFAULT}:{MQTT_PORT_DEFAULT}"}
 
 
-def _build_dispatch_payload(zone_id: str, recipe: RecipeResult, safety_validated: bool) -> Dict[str, Any]:
+def _build_dispatch_payload(
+    zone_id: str,
+    recipe: RecipeResult,
+    safety_validated: bool,
+    sim_speed: int = 10,
+    safety_violations: Optional[List[Any]] = None,
+) -> Dict[str, Any]:
+    """Build the canonical SCADAPayload dict (contract shape, ticket #6).
+
+    duration_sec is informational: the twin recomputes runtimes from its own
+    calibrated flow table. sim_speed is explicit and defaults to 10.
+    """
     commands: List[Dict[str, Any]] = []
     for pump_id, (chem, volume) in enumerate(
         (
@@ -325,10 +346,12 @@ def _build_dispatch_payload(zone_id: str, recipe: RecipeResult, safety_validated
                 "duration_sec": round(volume / flow, 2),
             }
         )
-    return {
+
+    payload: Dict[str, Any] = {
         "timestamp": _now_iso(),
         "zone_id": zone_id,
         "safety_validated": safety_validated,
+        "sim_speed": sim_speed,
         "recipe": {
             "biopesticide_ml": recipe.biopesticide_ml,
             "uv_stabilizer_ml": recipe.uv_stabilizer_ml,
@@ -338,6 +361,17 @@ def _build_dispatch_payload(zone_id: str, recipe: RecipeResult, safety_validated
         },
         "commands": commands,
     }
+    if safety_violations:
+        payload["safety_violations"] = [v.__dict__ for v in safety_violations]
+
+    # When the shared contract is available, validate/normalize the payload
+    # through it so the twin and any consumer parse an identical shape.
+    if HAS_CONTRACTS:
+        try:
+            payload = SCADAPayload(**payload).model_dump()
+        except Exception:
+            pass  # keep the dict; the twin validates on its side too
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +419,14 @@ def _tool_dispatch_scada_dosing(args: Dict[str, Any]) -> Dict[str, Any]:
         float(args["relative_humidity_pct"]),
     )
     recipe_violations = _safety.validate_recipe(recipe)
-    payload = _build_dispatch_payload(args["zone_id"], recipe, safety_validated=not recipe_violations)
+    sim_speed = int(args.get("sim_speed", 10))
+    payload = _build_dispatch_payload(
+        args["zone_id"],
+        recipe,
+        safety_validated=not recipe_violations,
+        sim_speed=sim_speed,
+        safety_violations=recipe_violations,
+    )
     dispatch_violations = _safety.validate_dispatch(payload["commands"])
     all_violations = recipe_violations + dispatch_violations
 
