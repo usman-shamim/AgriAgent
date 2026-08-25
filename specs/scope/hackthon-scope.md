@@ -33,7 +33,7 @@ AgriAgent is an autonomous industrial supervisory control and data acquisition (
 
 ### Hackathon MVP Scope Boundaries
 
-* **In Scope:** Real-time environmental data ingestion, kinetic degradation modeling, multi-agent reasoning, deterministic tool calling via Model Context Protocol (MCP) or OpenAI Agent SDK, JSON payload dispatch over local MQTT, and an asynchronous Python digital twin simulating fluid mechanics and tank levels.
+* **In Scope:** Real-time environmental data ingestion, kinetic degradation modeling, multi-agent reasoning, deterministic tool calling via Model Context Protocol (MCP) or the OpenAI Agents SDK, JSON payload dispatch over local MQTT, and an asynchronous Python digital twin simulating fluid mechanics and tank levels.
 * **Out of Scope for Stage Demo:** Custom PCB manufacturing, closed-loop feedback from physical chemical titration probes, and high-voltage three-phase motor control.
 
 ### Deployment Playbook — Four Extension Paths (keep the build tight)

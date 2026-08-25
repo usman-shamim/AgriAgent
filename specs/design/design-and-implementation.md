@@ -88,18 +88,18 @@ In the Punjab and Sindh cotton belts, the excessive use of broad-spectrum synthe
 
 By integrating simple agronomic tools (such as yellow sticky traps) with target-specific bio-pesticides (including Helicoverpa armigera Nucleopolyhedrovirus / HaNPV, Beauveria bassiana, and azadirachtin), chemical costs can be reduced significantly. Furthermore, optimizing inputs through soil testing and organic amendments has been shown to increase cotton yields by $5\%$ while reducing fertilizer costs by $\text{PKR } 5,000 \text{ to } 7,000$ per acre.
 
-## 3. System Architecture and Agentic Workflow (OpenAI Agent SDK / MCP)
+## 3. System Architecture and Agentic Workflow (OpenAI Agents SDK / MCP)
 
-The autonomous formulation and dosing system is orchestrated by a multi-agent framework built on the OpenAI Agent SDK, using the Model Context Protocol (MCP) to bridge the cloud-based AI agents with physical field actuators.
+The autonomous formulation and dosing system is orchestrated by a multi-agent framework built on the OpenAI Agents SDK, using the Model Context Protocol (MCP) to bridge the AI agents with physical field actuators. Chemistry stays deterministic — the LLM agents are thin parsers over `@function_tool`-wrapped Python math — but the orchestration uses the official `agents` library (`Agent`, `Runner`, `handoffs`), per the wayfinder decision.
 
 ### Multi-Agent Interaction Model and Orchestration
 
-The system uses a collaborative multi-agent architecture where specialized agents execute tasks under the coordination of a central Orchestrator Agent. This design leverages the thinnest possible abstraction layer of the OpenAI Agent SDK, using the Runner execution engine to handle turn-based loops, asynchronous tool calling, and multi-agent handoffs.
+The system uses a collaborative multi-agent architecture where specialized agents execute tasks under the coordination of a central Orchestrator Agent. This design uses the OpenAI Agents SDK, with the `Runner` execution engine handling turn-based loops, asynchronous tool calling, and multi-agent handoffs.
 
 ```text
                                ┌───────────────────────────┐
                                │     Orchestrator Agent    │
-                               │   (OpenAI Agent SDK Loop) │
+                               │  (OpenAI Agents SDK Loop) │
                                └─────────────┬─────────────┘
                                              │
                        ┌─────────────────────┼─────────────────────┐
@@ -138,7 +138,7 @@ The execution workflow is structured around four specialized agents:
 
 This multi-agent system is managed via the `Runner.run()` or `Runner.run_sync()` methods, which execute the agent loop asynchronously. The runner queries the current agent, executes any returned tool calls, processes handoffs to other agents, and handles state persistence.
 
-By integrating `SQLiteSession` from the OpenAI Agent SDK, conversational states can be saved to a local database (`conversations.db`), enabling the system to preserve historical context and resume interrupted tasks. For real-time monitoring, `Runner.run_streamed()` streams execution events as they occur, providing immediate feedback to the operator interface.
+By integrating `SQLiteSession` from the OpenAI Agents SDK, conversational states can be saved to a local database (`conversations.db`), enabling the system to preserve historical context and resume interrupted tasks. For real-time monitoring, `Runner.run_streamed()` streams execution events as they occur, providing immediate feedback to the operator interface.
 
 To monitor and debug these multi-agent workflows, the system utilizes the SDK's built-in tracing capabilities. Each execution run is automatically wrapped in hierarchical tracing spans. Developers can view detailed performance metrics, model generations, tool call delays, and handoff events on the OpenAI Traces dashboard. These tracing spans can be configured and managed via the `RunConfig` class:
 
@@ -252,128 +252,15 @@ The hardware demonstration rig simulates an automated multi-channel chemical dos
 | 4-Channel Relay Board | Optoisolated coil protection, $10\text{A}$ contacts | $5\text{V}$ digital logic active-low | GPIO 18 (Relay 1), GPIO 19 (Relay 2) |
 | LM2596 Buck Converter | Adjustable output, $3\text{A}$ max continuous | Step-down ($12\text{V}$ to $5\text{V}$) | Direct DC bus power |
 
-### Python OpenAI Agent SDK MQTT Integration
+### Python OpenAI Agents SDK MQTT Integration
 
-The following script implements a complete multi-agent formulation loop using the OpenAI Agent SDK. When invoked, the agent calculates the required chemical ratios based on incoming environmental conditions, validates the recipe, and publishes a structured JSON control payload to the Eclipse Mosquitto broker to actuate the physical pumps.
+The agentic integration is implemented once, in `src/agents/`, and this section describes its design rather than duplicating the code (single source of truth — the modules are canonical).
 
-```python
-import os
-import json
-import asyncio
-from pydantic import BaseModel, Field
-from openai import AsyncOpenAI
-from agents import Agent, Runner, function_tool
-import paho.mqtt.client as mqtt
+- **Deterministic tool surface** (`src/agents/tools.py`): the three `@function_tool` wrappers — `compute_degradation_kinetics`, `generate_chemical_recipe`, `dispatch_scada_dosing` — wrap the confirmed engines in `src/mcp_server_scada.py` (the LLM can only call them, never improvise the math). The dispatch tool builds the canonical `SCADAPayload` via `src/twin/contracts.py` and publishes it over MQTT at QoS 1 to `agri/actuator/{zone_id}/dosing_dispatch`, with the 0.20% v/v surfactant guardrail and the 30s pump-cycle thermal cap.
+- **Agents & handoffs** (`src/agents/pipeline.py`): three named agents — Perception (kinetics tool, hands off to Formulation) → Formulation (recipe tool, hands off to SCADA) → SCADA (dispatch tool) — wired with native `handoffs=[...]` and driven by `await Runner.run(perception_agent, input=...)`.
+- **Entry point**: `python -m src.agents.pipeline [--zone --uv --temp --rh --batch --dispatch]` runs one telemetry cycle; the runner logs each tool call and handoff, which is the judge-visible trace on stage.
 
-# Ensure the system client is initialized asynchronously
-openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-class FormulationRecipe(BaseModel):
-    batch_volume_ml: float = Field(..., description="Target volume of the final formulation batch in milliliters.")
-    active_ratio: float = Field(..., description="Calculated ratio of active microbial/peptide concentrate (0.0 to 1.0).")
-    surfactant_ratio: float = Field(..., description="Calculated ratio of Tween-80 surfactant (0.0 to 1.0).")
-    stabilizer_ratio: float = Field(..., description="Calculated ratio of Sodium Lignosulfonate stabilizer (0.0 to 1.0).")
-
-@function_tool
-def publish_dosing_transaction(recipe_payload_json: str) -> str:
-    """
-    Accepts a validated formulation recipe, converts the ratios into specific pump
-    runtimes, and publishes the control parameters to the physical dosing rig via MQTT.
-    """
-    try:
-        # Parse the JSON string into the validation model
-        data = json.loads(recipe_payload_json)
-        recipe = FormulationRecipe(**data)
-
-        # Verify stoichiometric boundaries (sum of active ingredients must not exceed 100%)
-        combined_ratio = recipe.active_ratio + recipe.surfactant_ratio + recipe.stabilizer_ratio
-        if combined_ratio > 1.0:
-            return f"Stoichiometric failure: Total ratio ({combined_ratio}) exceeds 1.0. Formulation rejected."
-
-        # Compute absolute volumetric outputs
-        v_active = recipe.batch_volume_ml * recipe.active_ratio
-        v_surfactant = recipe.batch_volume_ml * recipe.surfactant_ratio
-        v_stabilizer = recipe.batch_volume_ml * recipe.stabilizer_ratio
-        v_water = recipe.batch_volume_ml * (1.0 - combined_ratio)
-
-        # Convert volumes to runtimes based on calibrated pump flow rates
-        # (chemical pumps 10 ml/sec; carrier water 50 ml/sec)
-        flow_chemical = 10.0
-        flow_water = 50.0
-        runtimes = {
-            "pump_1_active_seconds": round(v_active / flow_chemical, 2),
-            "pump_2_surfactant_seconds": round(v_surfactant / flow_chemical, 2),
-            "pump_3_stabilizer_seconds": round(v_stabilizer / flow_chemical, 2),
-            "pump_4_water_seconds": round(v_water / flow_water, 2)
-        }
-
-        # Build the structured, device-compliant payload
-        payload = {
-            "transaction_id": "TX_AG_2026_9938",
-            "operation": "BATCH_EXECUTION",
-            "target_system": "peristaltic_dosing_rig_01",
-            "volumes_ml": {
-                "active": round(v_active, 1),
-                "surfactant": round(v_surfactant, 1),
-                "stabilizer": round(v_stabilizer, 1),
-                "water": round(v_water, 1)
-            },
-            "execution_runtimes_sec": runtimes
-        }
-
-        # Publish the payload to the local Eclipse Mosquitto broker
-        mqtt_broker = os.getenv("AGRIA_MQTT_BROKER", "localhost")
-        mqtt_port = int(os.getenv("AGRIA_MQTT_PORT", "1883"))
-        # Use standard topic naming conventions for device registration and commands
-        target_topic = "agri/actuator/zone_north/dosing_dispatch"
-
-        client = mqtt.Client()
-        client.connect(mqtt_broker, mqtt_port, 60)
-
-        # Publish with QoS 1 to guarantee delivery to the edge node
-        message_info = client.publish(target_topic, json.dumps(payload), qos=1)
-        message_info.wait_for_publish()
-        client.disconnect()
-
-        return (
-            f"Recipe successfully compiled and verified. Volumetric split: Active={v_active:.1f}ml, "
-            f"Surfactant={v_surfactant:.1f}ml, Stabilizer={v_stabilizer:.1f}ml, Water={v_water:.1f}ml. "
-            f"Dosing payload successfully published to topic '{target_topic}'."
-        )
-
-    except Exception as e:
-        return f"Operational failure during dosing transaction: {str(e)}"
-
-# Define the specialized formulation agent with strict, environmental instructions
-formulator_agent = Agent(
-    name="AgTech-Chemical-Formulator",
-    instructions=(
-        "You are an expert chemical process automation agent. Your role is to compute optimal "
-        "biopesticide formulations based on environmental conditions and control physical dosing pumps. "
-        "Follow these rules precisely (deterministic, per the canonical formulas):\n"
-        "1. Active ingredient ratio is always fixed at 0.08 (8%).\n"
-        "2. UV stabilizer ratio scales with UV: stabilizer_pct = min(3.0, 0.25 + 0.25 * UV) % w/v.\n"
-        "3. Surfactant ratio compensates for evaporation: surf_pct = min(0.20, 0.05 * (1 + 1.2 * (1 - RH/100)) * (T/293.15)^1.5) % v/v.\n"
-        "4. Water acts as the remaining carrier volume to make up 1.0 (100%).\n"
-        "Calculate these ratios, build the FormulationRecipe, and call the publish_dosing_transaction tool."
-    ),
-    tools=[publish_dosing_transaction],
-    model="gpt-4o"
-)
-
-async def main():
-    # Simulate a hot, dry, high-UV scenario in the South Asian cotton belt
-    sensor_input = "Environmental Telemetry - UV Index: 8.2, Humidity: 28.5%. Prepare a 400ml formulation batch."
-    print("Initiating agentic formulation control loop...")
-
-    # Run the agentic sequence using the SDK's Runner engine
-    run_result = await Runner.run(formulator_agent, sensor_input)
-    print("\n=== Agent Decision & Execution Output ===")
-    print(run_result.final_output)
-
-if __name__ == "__main__":
-    asyncio.run(main())
-```
+Chemistry stays deterministic: the LLM agents are thin parsers that read telemetry and trigger the Python tools; the MQTT payload and the twin execution are identical regardless of which agent emitted them.
 
 ## 5. ROI, Metrics and Feasibility Analysis
 
@@ -442,7 +329,7 @@ To captivate the evaluation panel, the developer must present a reliable, visual
   - Place the output tubes of all four pumps into a single glass mixing beaker at the front of the stage.
 - **Local Networking**: Run a local Eclipse Mosquitto MQTT broker on the presenter's laptop and configure a dedicated Wi-Fi router. This ensures stable communication between the laptop and the ESP32, avoiding the high latency and interference of shared public venue networks.
 - **Execution Sequence**:
-  1. Enter an environmental scenario on the laptop interface, such as: *"High temperature and intense UV-B index of 8.5 detected on a Pusa 1121 Basmati crop in Punjab."* Project the terminal onto the stage screen, showing the OpenAI Agent SDK processing the command. The Stoichiometry Agent reasons through the UV degradation risks, while the Safety Agent confirms that the calculated stabilizer ratio is safe.
+  1. Enter an environmental scenario on the laptop interface, such as: *"High temperature and intense UV-B index of 8.5 detected on a Pusa 1121 Basmati crop in Punjab."* Project the terminal onto the stage screen, showing the OpenAI Agents SDK processing the command. The Stoichiometry Agent reasons through the UV degradation risks, while the Safety Agent confirms that the calculated stabilizer ratio is safe.
   2. The SCADA Agent compiles the recipe into runtimes (e.g., Pump 1: $3.2\text{s}$, Pump 2: $0.95\text{s}$, Pump 3: $0.04\text{s}$, Pump 4: $7.16\text{s}$ for a $400\text{ mL}$ batch at UV 8.5) and publishes this payload to the `agri/actuator/zone_north/dosing_dispatch` topic.
   3. The ESP32 immediately registers the payload, triggering the colored pumps. As the dyed liquids flow into the mixing beaker, the changing colors provide immediate, visual proof of the dynamic formulation process.
 
@@ -454,7 +341,7 @@ To captivate the evaluation panel, the developer must present a reliable, visual
 
 **0:46 - 1:30: The Agentic Solution**
 
-> "To solve this, we developed ChemAgent-Agro: an autonomous formulation and dosing system. Our solution combines a Diploma of Associate Engineering in Chemical Technology with advanced Agentic AI engineering. Built on the OpenAI Agent SDK, our system coordinates specialized agents—monitoring environmental data, calculating formulation stoichiometry, validating chemical safety, and translating these choices into physical SCADA commands. When sensors detect high solar radiation or dry air, our agents dynamically adjust the formulation. They increase sodium lignosulfonate to absorb UV, extending the active half-life of the biopesticide by up to $14$-fold. They also modulate Tween-80 and surfactant-like peptides to enhance leaf retention and prevent evaporation."
+> "To solve this, we developed ChemAgent-Agro: an autonomous formulation and dosing system. Our solution combines a Diploma of Associate Engineering in Chemical Technology with advanced Agentic AI engineering. Built on the OpenAI Agents SDK, our system coordinates specialized agents—monitoring environmental data, calculating formulation stoichiometry, validating chemical safety, and translating these choices into physical SCADA commands. When sensors detect high solar radiation or dry air, our agents dynamically adjust the formulation. They increase sodium lignosulfonate to absorb UV, extending the active half-life of the biopesticide by up to $14$-fold. They also modulate Tween-80 and surfactant-like peptides to enhance leaf retention and prevent evaporation."
 
 **1:31 - 2:15: The Live Actuation**
 

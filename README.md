@@ -51,8 +51,10 @@ The problem it solves: biopesticides are safe but fragile. Solar UV and heat des
 ## What's built
 
 - **`src/mcp_server_scada.py`** — the MCP SCADA tool server. Three tools (`compute_degradation_kinetics`, `generate_chemical_recipe`, `dispatch_scada_dosing`) with Pydantic-validated schemas, the confirmed formulas, and a safety guardrail. Run `--selftest` or `--demo`; serves over MCP stdio.
-- **`specs/kinetics_pipeline.py`** — fetches real hourly weather for Multan (Open-Meteo) and exports a Kaggle-ready degradation dataset.
-- **`specs/scada_trajectory_pipeline.py`** — generates 500 synthetic agent-formulation + MQTT-actuation traces (the SCADA trajectories dataset).
+- **`src/agents/`** — the OpenAI Agents SDK pipeline: Perception → Formulation → SCADA agents with native handoffs, driven by `Runner.run(...)`. The LLM agents are thin parsers over the deterministic `@function_tool` chemistry. Run `python -m src.agents.pipeline`.
+- **`src/twin/`** — the shared SCADA contract (`contracts.py`) and the digital twin (`twin.py`) that subscribes to dispatch topics, simulates pump actuation, and publishes tank status.
+- **`specs/code/kinetics_pipeline.py`** — fetches real hourly weather for Multan (Open-Meteo) and exports a Kaggle-ready degradation dataset.
+- **`specs/code/scada_trajectory_pipeline.py`** — generates 500 synthetic agent-formulation + MQTT-actuation traces (the SCADA trajectories dataset).
 - **Two Kaggle datasets** — `data/synthetic_biopesticide_telemetry.csv` (kinetics) and `data/agriagent_scada_dosing_trajectories.csv` (dosing decisions).
 
 ## Repository layout
@@ -60,7 +62,7 @@ The problem it solves: biopesticides are safe but fragile. Solar UV and heat des
 ```
 src/            MCP SCADA server + agent pipeline (agents/, twin/)
 dashboard/      Streamlit / Next.js SCADA interface
-specs/          Technical specs, design docs, and data pipeline scripts
+specs/          Specs by kind: scope/, design/, data/, code/
 data/           Generated datasets (kinetics + SCADA trajectories)
 docs/           Wayfinding map, ADRs, domain docs
 scripts/        Utility scripts (telemetry sim, demo helpers)
@@ -70,24 +72,27 @@ scripts/        Utility scripts (telemetry sim, demo helpers)
 
 ```bash
 # Install dependencies (MCP SDK, paho-mqtt, pydantic)
-python3 -m venv .venv && .venv/bin/pip install -r specs/requirements.txt
+python3 -m venv .venv && .venv/bin/pip install -r specs/code/requirements.txt
 
 # MCP SCADA server self-test (pure math, no broker needed)
 .venv/bin/python src/mcp_server_scada.py --selftest
 
+# Run the agent pipeline (needs OPENAI_API_KEY; omit --dispatch to preview)
+.venv/bin/python -m src.agents.pipeline --zone zone_north --uv 9.2 --temp 38 --rh 32 --batch 500
+
 # Generate the kinetics benchmark dataset (real Multan weather)
-.venv/bin/python specs/kinetics_pipeline.py --days 7 --output data/synthetic_biopesticide_telemetry.csv
+.venv/bin/python specs/code/kinetics_pipeline.py --days 7 --output data/synthetic_biopesticide_telemetry.csv
 
 # Generate the SCADA trajectories dataset (500 runs)
-.venv/bin/python specs/scada_trajectory_pipeline.py --runs 500 --output data/agriagent_scada_dosing_trajectories.csv
+.venv/bin/python specs/code/scada_trajectory_pipeline.py --runs 500 --output data/agriagent_scada_dosing_trajectories.csv
 
 # Offline kinetics mode (no network) — deterministic synthetic telemetry
-.venv/bin/python specs/kinetics_pipeline.py --offline --days 2
+.venv/bin/python specs/code/kinetics_pipeline.py --offline --days 2
 ```
 
 ## Roadmap
 
-The build is charted on the wayfinder map (GitHub Issues #1) — decision tickets covering the digital twin contract, the agent runtime (OpenAI Agent SDK vs function-calling), and the demo dashboard. Broker choice, pump calibration, formulation policy, and the kinetics constants are settled. See the open tickets for what's next.
+The build is charted on the wayfinder map (GitHub Issues #1) — decision tickets covering the digital twin contract, the agent runtime (OpenAI Agents SDK, with deterministic `@function_tool` chemistry), and the demo dashboard. Broker choice, pump calibration, formulation policy, and the kinetics constants are settled. See the open tickets for what's next.
 
 ## License
 

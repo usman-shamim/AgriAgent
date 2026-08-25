@@ -30,7 +30,7 @@ Hosting this dataset proves to judges and recruiters that AgriAgent does not mer
 
 The schema is the **execution record** of the agent pipeline: columns 1–6 are the telemetry inputs (Perception Agent), columns 7–12 are the formulation outputs (Formulation Agent), column 13 is the surface-tension model, columns 14–17 are the pump actuation setpoints (SCADA Agent), and columns 18–19 are the safety verdict and routing target (Safety + Actuator Agents).
 
-## 2. Generator Script (`scada_trajectory_pipeline.py`)
+## 2. Generator Script (`specs/code/scada_trajectory_pipeline.py`)
 
 Run this standalone script to generate the synthetic execution trajectories dataset. It reuses the confirmed kinetics constants and formulation rules from the scope spec — so the generated rows match what `src/mcp_server_scada.py` would compute for the same telemetry.
 
@@ -43,7 +43,7 @@ Outputs stoichiometric chemical recipes, surface tension models, safety checks,
 and exact MQTT pump actuation parameters for Kaggle hosting.
 
 Usage:
-    python scada_trajectory_pipeline.py --runs 500 --output agriagent_scada_dosing_trajectories.csv
+    python specs/code/scada_trajectory_pipeline.py --runs 500 --output agriagent_scada_dosing_trajectories.csv
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def generate_scada_runs(num_runs: int = 500) -> List[Dict]:
         temp_c = round(24.0 + (solar_factor * 15.0) + random.gauss(0, 0.4), 2)
         rh_pct = round(max(15.0, min(95.0, 78.0 - (solar_factor * 48.0) + random.gauss(0, 1.2))), 2)
 
-        # Kinetics & Stoichiometry Engine (confirmed constants from hackthon-scope.md)
+        # Kinetics & Stoichiometry Engine (confirmed constants from specs/scope/hackthon-scope.md)
         t_kelvin = temp_c + 273.15
         k_deg = 0.015 * (1.0 + 0.18 * uv) * math.exp(-(42500.0 / 8.314) * ((1.0 / t_kelvin) - (1.0 / 298.15)))
         half_life_hrs = round(math.log(2) / k_deg, 2) if k_deg > 0 else 999.0

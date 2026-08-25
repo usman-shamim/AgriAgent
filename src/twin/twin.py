@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Dict, List
 
 import paho.mqtt.client as mqtt
+from paho.mqtt.enums import CallbackAPIVersion
 
 # Allow both `python src/twin/twin.py` and `python -m src.twin.twin`:
 # ensure the repo root is importable so `src.twin.contracts` resolves.
@@ -90,13 +91,13 @@ class DigitalTwinSCADA:
             "carrier_water": 50.0,
         }
 
-        self.client = mqtt.Client(client_id="DigitalTwinEngine")
+        self.client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, client_id="DigitalTwinEngine")
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
         self.client.connect(broker_host, broker_port, 60)
 
-    def on_connect(self, client, userdata, flags, rc):
-        print(f"[DIGITAL TWIN] Connected to MQTT Broker with result code: {rc}")
+    def on_connect(self, client, userdata, flags, reason_code, properties):
+        print(f"[DIGITAL TWIN] Connected to MQTT Broker with result code: {reason_code}")
         client.subscribe("agri/actuator/+/dosing_dispatch")
 
     def on_message(self, client, userdata, msg):
@@ -158,6 +159,7 @@ class DigitalTwinSCADA:
         self.client.publish(
             f"agri/digital_twin/{zone_id}/tank_status",
             json.dumps(state.to_dict()),
+            retain=True,  # late-joining subscribers (e.g. the dashboard) get the current state immediately
         )
 
     def start(self):

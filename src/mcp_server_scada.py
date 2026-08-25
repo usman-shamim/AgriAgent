@@ -10,7 +10,7 @@ zero third-party dependencies and is unit-testable on its own. MCP registration
 and MQTT dispatch are lazy-imported so the server runs even before the SDK is
 installed (tools fall back to a local function-calling surface).
 
-Formulas (specs/hackthon-scope.md §2, specs/Biopesticide-Kinetics-&-Telemetry-Pipeline.md):
+Formulas (specs/scope/hackthon-scope.md §2, specs/data/Biopesticide-Kinetics-&-Telemetry-Pipeline.md):
   k_baseline = ln(2) / DT50_hours                        (per hour)
   k_dynamic  = k_baseline * (1 + alpha * UV) * exp(-(Ea/R)(1/T - 1/T0))
   C_lignin   = min(3.00%, 0.25% + 0.25% * UV)           (% w/v)

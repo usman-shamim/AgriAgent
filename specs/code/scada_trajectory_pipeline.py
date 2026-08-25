@@ -42,7 +42,7 @@ def generate_scada_runs(num_runs: int = 500) -> List[Dict]:
         temp_c = round(24.0 + (solar_factor * 15.0) + random.gauss(0, 0.4), 2)
         rh_pct = round(max(15.0, min(95.0, 78.0 - (solar_factor * 48.0) + random.gauss(0, 1.2))), 2)
 
-        # Kinetics & Stoichiometry Engine (confirmed constants from hackthon-scope.md)
+        # Kinetics & Stoichiometry Engine (confirmed constants from specs/scope/hackthon-scope.md)
         t_kelvin = temp_c + 273.15
         k_deg = 0.015 * (1.0 + 0.18 * uv) * math.exp(-(42500.0 / 8.314) * ((1.0 / t_kelvin) - (1.0 / 298.15)))
         half_life_hrs = round(math.log(2) / k_deg, 2) if k_deg > 0 else 999.0

@@ -17,7 +17,7 @@ The pipeline fetches historical environmental telemetry, binds it to empirical l
 [Export Target] -> synthetic_biopesticide_telemetry.csv (Kaggle Dataset)
 ```
 
-The reference implementation is `specs/kinetics_pipeline.py`. It uses the **forecast** Open-Meteo API for the recent window (the archive API does not expose `uv_index` or solar radiation) and falls back to the archive API for older windows, warning when UV is unavailable.
+The reference implementation is `specs/code/kinetics_pipeline.py`. It uses the **forecast** Open-Meteo API for the recent window (the archive API does not expose `uv_index` or solar radiation) and falls back to the archive API for older windows, warning when UV is unavailable.
 
 ## 2. Ingestion & Empirical Baseline Constants
 
@@ -75,10 +75,10 @@ The pipeline generates an exportable tabular format structured for Kaggle hostin
 
 ```bash
 # Live fetch (forecast API, real UV for Multan), 7 days
-python3 specs/kinetics_pipeline.py --days 7 --output data/synthetic_biopesticide_telemetry.csv
+python3 specs/code/kinetics_pipeline.py --days 7 --output data/synthetic_biopesticide_telemetry.csv
 
 # Offline deterministic demo (no network)
-python3 specs/kinetics_pipeline.py --offline --days 2
+python3 specs/code/kinetics_pipeline.py --offline --days 2
 ```
 
 The pipeline is pure standard library — no third-party install required.
