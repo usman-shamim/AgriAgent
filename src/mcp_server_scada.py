@@ -66,6 +66,17 @@ MQTT_TOPIC = "agri/actuator/{zone_id}/dosing_dispatch"
 MQTT_BROKER_DEFAULT = os.getenv("AGRIA_MQTT_BROKER", "localhost")
 MQTT_PORT_DEFAULT = int(os.getenv("AGRIA_MQTT_PORT", "1883"))
 
+# Telemetry/batch operating envelope shared by every tool surface (MCP schemas,
+# SDK @function_tool engines, dashboard). The engines reject out-of-envelope
+# inputs so no surface can bypass validation with raw floats.
+UV_INDEX_MIN = 0.0
+UV_INDEX_MAX = 16.0
+TEMP_C_MIN = -10.0
+TEMP_C_MAX = 55.0
+RH_PCT_MIN = 5.0
+RH_PCT_MAX = 100.0
+BATCH_ML_MAX = 10_000.0
+
 
 # ---------------------------------------------------------------------------
 # 2. Pure-math domain engine (zero dependencies)
@@ -125,6 +136,14 @@ class KineticsEngine:
         return math.log(2) / k if k > 0 else math.inf
 
     def compute(self, uv_index: float, temp_c: float) -> KineticsResult:
+        if not UV_INDEX_MIN <= uv_index <= UV_INDEX_MAX:
+            raise ValueError(
+                f"uv_index must be in [{UV_INDEX_MIN}, {UV_INDEX_MAX}], got {uv_index}"
+            )
+        if not TEMP_C_MIN <= temp_c <= TEMP_C_MAX:
+            raise ValueError(
+                f"ambient_temp_c must be in [{TEMP_C_MIN}, {TEMP_C_MAX}], got {temp_c}"
+            )
         f_uv = self.f_uv(uv_index)
         f_temp = self.f_temp(temp_c)
         k = K_BASELINE_PER_HR * f_uv * f_temp
@@ -157,6 +176,22 @@ class FormulationEngine:
         temp_c: float,
         rh_pct: float,
     ) -> RecipeResult:
+        if not 0.0 < batch_volume_ml <= BATCH_ML_MAX:
+            raise ValueError(
+                f"batch_volume_ml must be in (0, {BATCH_ML_MAX}], got {batch_volume_ml}"
+            )
+        if not UV_INDEX_MIN <= uv_index <= UV_INDEX_MAX:
+            raise ValueError(
+                f"uv_index must be in [{UV_INDEX_MIN}, {UV_INDEX_MAX}], got {uv_index}"
+            )
+        if not TEMP_C_MIN <= temp_c <= TEMP_C_MAX:
+            raise ValueError(
+                f"ambient_temp_c must be in [{TEMP_C_MIN}, {TEMP_C_MAX}], got {temp_c}"
+            )
+        if not RH_PCT_MIN <= rh_pct <= RH_PCT_MAX:
+            raise ValueError(
+                f"relative_humidity_pct must be in [{RH_PCT_MIN}, {RH_PCT_MAX}], got {rh_pct}"
+            )
         bio_ml = batch_volume_ml * ACTIVE_RATIO
         lignin_pct = self.recommended_lignin_pct(uv_index)
         surf_pct = self.surfactant_pct(rh_pct, temp_c)
@@ -196,8 +231,24 @@ class SafetyValidator:
                     f"lignin {recipe.recommended_lignin_pct:.3f}% exceeds solubility {LIGNIN_MAX_PCT:.2f}%",
                 )
             )
-        if recipe.biopesticide_ml < 0 or recipe.carrier_water_ml < 0:
-            violations.append(SafetyViolation("negative_volume", "recipe contains negative component volume"))
+        negative_components = [
+            name
+            for name, volume in (
+                ("biopesticide", recipe.biopesticide_ml),
+                ("uv_stabilizer", recipe.uv_stabilizer_ml),
+                ("surfactant", recipe.surfactant_ml),
+                ("carrier_water", recipe.carrier_water_ml),
+            )
+            if volume < 0
+        ]
+        if negative_components:
+            violations.append(
+                SafetyViolation(
+                    "negative_volume",
+                    "recipe contains negative component volume(s): "
+                    + ", ".join(negative_components),
+                )
+            )
         if not math.isclose(
             recipe.biopesticide_ml
             + recipe.uv_stabilizer_ml
@@ -255,32 +306,32 @@ def _pydantic_schemas() -> Dict[str, type]:
 
     class FieldTelemetryInput(BaseModel):
         zone_id: str = Field(description="Field management sector identifier")
-        uv_index: float = Field(ge=0.0, le=16.0, description="Ambient UV Index")
-        ambient_temp_c: float = Field(ge=-10.0, le=55.0, description="Temperature in Celsius")
-        relative_humidity_pct: float = Field(ge=5.0, le=100.0, description="Relative humidity percentage")
-        batch_volume_ml: float = Field(default=500.0, gt=0.0, le=10_000.0, description="Batch volume in mL")
+        uv_index: float = Field(ge=UV_INDEX_MIN, le=UV_INDEX_MAX, description="Ambient UV Index")
+        ambient_temp_c: float = Field(ge=TEMP_C_MIN, le=TEMP_C_MAX, description="Temperature in Celsius")
+        relative_humidity_pct: float = Field(ge=RH_PCT_MIN, le=RH_PCT_MAX, description="Relative humidity percentage")
+        batch_volume_ml: float = Field(default=500.0, gt=0.0, le=BATCH_ML_MAX, description="Batch volume in mL")
 
     class BatchRecipeInput(BaseModel):
         zone_id: str = Field(description="Field management sector identifier")
-        batch_volume_ml: float = Field(default=500.0, gt=0.0, le=10_000.0, description="Batch volume in mL")
-        uv_index: float = Field(ge=0.0, le=16.0, description="Ambient UV Index")
-        ambient_temp_c: float = Field(ge=-10.0, le=55.0, description="Temperature in Celsius")
-        relative_humidity_pct: float = Field(ge=5.0, le=100.0, description="Relative humidity percentage")
+        batch_volume_ml: float = Field(default=500.0, gt=0.0, le=BATCH_ML_MAX, description="Batch volume in mL")
+        uv_index: float = Field(ge=UV_INDEX_MIN, le=UV_INDEX_MAX, description="Ambient UV Index")
+        ambient_temp_c: float = Field(ge=TEMP_C_MIN, le=TEMP_C_MAX, description="Temperature in Celsius")
+        relative_humidity_pct: float = Field(ge=RH_PCT_MIN, le=RH_PCT_MAX, description="Relative humidity percentage")
 
     class DispatchInput(BaseModel):
         zone_id: str = Field(description="Field management sector identifier")
-        batch_volume_ml: float = Field(default=500.0, gt=0.0, le=10_000.0, description="Batch volume in mL")
-        uv_index: float = Field(ge=0.0, le=16.0, description="Ambient UV Index")
-        ambient_temp_c: float = Field(ge=-10.0, le=55.0, description="Temperature in Celsius")
-        relative_humidity_pct: float = Field(ge=5.0, le=100.0, description="Relative humidity percentage")
+        batch_volume_ml: float = Field(default=500.0, gt=0.0, le=BATCH_ML_MAX, description="Batch volume in mL")
+        uv_index: float = Field(ge=UV_INDEX_MIN, le=UV_INDEX_MAX, description="Ambient UV Index")
+        ambient_temp_c: float = Field(ge=TEMP_C_MIN, le=TEMP_C_MAX, description="Temperature in Celsius")
+        relative_humidity_pct: float = Field(ge=RH_PCT_MIN, le=RH_PCT_MAX, description="Relative humidity percentage")
         dispatch: bool = Field(default=False, description="Publish to MQTT broker (requires broker running)")
         sim_speed: int = Field(default=10, ge=1, le=1000, description="Digital twin simulation acceleration factor")
 
         @field_validator("relative_humidity_pct")
         @classmethod
         def _rh_range(cls, v: float) -> float:
-            if not 0.0 <= v <= 100.0:
-                raise ValueError("relative_humidity_pct must be in [0, 100]")
+            if not RH_PCT_MIN <= v <= RH_PCT_MAX:
+                raise ValueError(f"relative_humidity_pct must be in [{RH_PCT_MIN}, {RH_PCT_MAX}]")
             return v
 
     return {
@@ -567,6 +618,33 @@ def _selftest() -> int:
     # 5. Extreme UV caps lignin at 3.00%.
     rec_extreme = _formulation.recipe(500.0, 16.0, 38.0, 32.0)
     check("lignin_cap", rec_extreme.recommended_lignin_pct, 3.0, tol=0.001)
+
+    # 6. Out-of-envelope inputs are rejected loudly (never silently approved).
+    for label, kwargs in (
+        ("rejects_out_of_range_rh", dict(batch_volume_ml=500.0, uv_index=9.2, temp_c=38.0, rh_pct=200.0)),
+        ("rejects_sub_absolute_zero_temp", dict(batch_volume_ml=500.0, uv_index=9.2, temp_c=-300.0, rh_pct=32.0)),
+        ("rejects_oversized_batch", dict(batch_volume_ml=20_000.0, uv_index=9.2, temp_c=38.0, rh_pct=32.0)),
+        ("kinetics_rejects_out_of_range_uv", None),
+    ):
+        try:
+            if kwargs is None:
+                _kinetics.compute(99.0, 38.0)
+            else:
+                _formulation.recipe(**kwargs)
+            rejected = False
+        except ValueError:
+            rejected = True
+        check(label, rejected, True)
+
+    # 7. Any negative component volume is a safety violation (FR-3).
+    neg = RecipeResult(
+        biopesticide_ml=40.0, uv_stabilizer_ml=12.75, surfactant_ml=-0.05,
+        carrier_water_ml=447.3, total_batch_volume_ml=500.0,
+        recommended_lignin_pct=2.55, surfactant_pct=-0.01,
+        uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=200.0,
+    )
+    neg_viol = _safety.validate_recipe(neg)
+    check("rejects_negative_component_volume", any(v.rule == "negative_volume" for v in neg_viol), True)
 
     print(f"\n{'SELFTEST PASSED' if not failures else 'SELFTEST FAILED: ' + ', '.join(failures)}")
     return 0 if not failures else 1

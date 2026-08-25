@@ -1,9 +1,10 @@
 """
 AgriAgent — Deterministic tool surface for the OpenAI Agents SDK pipeline.
 
-Wraps the confirmed chemistry engines (src/mcp_server_scada.py) and the shared
-SCADA contract (src/twin/contracts.py) as @function_tool functions. The LLM
-agents can only call these tools — they never improvise the math.
+Thin @function_tool wrappers over the shared TOOLS handlers in
+src/mcp_server_scada.py (one business-flow copy for MCP, SDK, and dashboard).
+The LLM agents can only call these tools — they never improvise the math, and
+out-of-envelope inputs are rejected by the shared engines.
 
 Backbone decision (wayfinder map): OpenAI Agents SDK (Agent, Runner, handoffs).
 Constants: k0 = ln(2)/48 (ticket #4), surfactant cap 0.20% v/v (ticket #5).
@@ -12,31 +13,23 @@ Constants: k0 = ln(2)/48 (ticket #4), surfactant cap 0.20% v/v (ticket #5).
 from __future__ import annotations
 
 import json
-import os
-from typing import Any, Dict, List, Optional
+import sys
+from pathlib import Path
+from typing import Any, Dict
 
 from agents import function_tool
 
 # Allow `python src/agents/tools.py` and `python -m src.agents.tools`:
 # ensure the repo root is importable so `src.*` resolves.
-import sys
-from pathlib import Path
-
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.mcp_server_scada import (
-    KineticsEngine,
-    FormulationEngine,
-    SafetyValidator,
-    _build_dispatch_payload,
-)
-from src.twin.contracts import ChemicalRecipe, PumpCommand, SCADAPayload
+from src.mcp_server_scada import TOOLS
 
-# Shared engine instances (pure math, no third-party deps beyond stdlib).
-_kinetics = KineticsEngine()
-_formulation = FormulationEngine()
-_safety = SafetyValidator()
+
+def _invoke_shared(tool_name: str, args: Dict[str, Any]) -> str:
+    """Run the canonical MCP tool handler and serialize its result."""
+    return json.dumps(TOOLS[tool_name]["handler"](args), default=str)
 
 
 @function_tool
@@ -44,10 +37,12 @@ def compute_degradation_kinetics(uv_index: float, ambient_temp_c: float) -> str:
     """Perception Agent tool.
 
     Compute the Bt degradation half-life and 1-hour viability from live UV index
-    and ambient temperature (Celsius). Returns a JSON string.
+    (0-16) and ambient temperature (-10 to 55 C). Returns a JSON string.
     """
-    result = _kinetics.compute(uv_index, ambient_temp_c)
-    return json.dumps(result.__dict__, default=str)
+    return _invoke_shared(
+        "compute_degradation_kinetics",
+        {"uv_index": uv_index, "ambient_temp_c": ambient_temp_c},
+    )
 
 
 @function_tool
@@ -60,20 +55,18 @@ def generate_chemical_recipe(
     """Formulation Agent tool.
 
     Compute the exact mL recipe for biopesticide, UV stabilizer, surfactant, and
-    carrier water for a batch. Returns a JSON string with the recipe and safety
-    verdict.
+    carrier water for a batch of at most 10000 mL. Telemetry must be within the
+    validated envelope: UV 0-16, temperature -10 to 55 C, humidity 5-100%.
+    Returns a JSON string with the recipe and safety verdict.
     """
-    recipe = _formulation.recipe(
-        batch_volume_ml, uv_index, ambient_temp_c, relative_humidity_pct
-    )
-    violations = _safety.validate_recipe(recipe)
-    return json.dumps(
+    return _invoke_shared(
+        "generate_chemical_recipe",
         {
-            "recipe": recipe.__dict__,
-            "safety_ok": len(violations) == 0,
-            "safety_violations": [v.__dict__ for v in violations],
+            "batch_volume_ml": batch_volume_ml,
+            "uv_index": uv_index,
+            "ambient_temp_c": ambient_temp_c,
+            "relative_humidity_pct": relative_humidity_pct,
         },
-        default=str,
     )
 
 
@@ -92,49 +85,18 @@ def dispatch_scada_dosing(
     (10/10/10/50 mL/s), and (optionally) publish the SCADAPayload over MQTT to
     agri/actuator/{zone_id}/dosing_dispatch at QoS 1. Returns a JSON string.
     """
-    recipe = _formulation.recipe(
-        batch_volume_ml, uv_index, ambient_temp_c, relative_humidity_pct
+    return _invoke_shared(
+        "dispatch_scada_dosing",
+        {
+            "zone_id": zone_id,
+            "batch_volume_ml": batch_volume_ml,
+            "uv_index": uv_index,
+            "ambient_temp_c": ambient_temp_c,
+            "relative_humidity_pct": relative_humidity_pct,
+            "dispatch": dispatch,
+            "sim_speed": 10,
+        },
     )
-    recipe_violations = _safety.validate_recipe(recipe)
-    sim_speed = 10
-    payload = _build_dispatch_payload(
-        zone_id,
-        recipe,
-        safety_validated=not recipe_violations,
-        sim_speed=sim_speed,
-        safety_violations=recipe_violations,
-    )
-    dispatch_violations = _safety.validate_dispatch(payload["commands"])
-    all_violations = recipe_violations + dispatch_violations
-
-    result: Dict[str, Any] = {
-        "zone_id": zone_id,
-        "safety_validated": not all_violations,
-        "safety_violations": [v.__dict__ for v in all_violations],
-        "payload": payload if not all_violations else None,
-    }
-    if all_violations:
-        result["message"] = "DISPATCH REJECTED by safety guardrail."
-        return json.dumps(result, default=str)
-
-    if dispatch:
-        mqtt_result = _publish_scada_payload(zone_id, payload)
-        result["mqtt"] = mqtt_result
-        result["message"] = (
-            f"DISPATCH SUCCESS to {mqtt_result.get('topic', '')}"
-            if mqtt_result.get("published")
-            else f"DISPATCH FAILED: {mqtt_result.get('error', 'unknown')}"
-        )
-    else:
-        result["message"] = "DISPATCH PREVIEW (pass dispatch=true to publish over MQTT)."
-    return json.dumps(result, default=str)
-
-
-def _publish_scada_payload(zone_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Publish a SCADAPayload to the broker. Reuses the MCP server's helper."""
-    from src.mcp_server_scada import _publish_scada_payload as _pub
-
-    return _pub(zone_id, payload)
 
 
 def build_sdk_pipeline() -> Dict[str, Any]:

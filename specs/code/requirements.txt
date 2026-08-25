@@ -7,7 +7,7 @@ paho-mqtt>=2.0           # MQTT client for broker dispatch
 pydantic>=2.5            # Schema validation for telemetry/recipe/pump contracts
 
 # OpenAI Agents SDK pipeline (src/agents/)
-openai-agents>=0.0.6     # Agent, Runner, function_tool, handoffs (specs/design/design-and-implementation.md §4.3)
+openai-agents>=0.22      # Agent, Runner, function_tool, handoffs; agents.testing.ScriptedModel for tests
 
 # Tests
 pytest>=8.0              # Agent pipeline tests (tests/test_agents.py)
@@ -15,5 +15,6 @@ pytest-asyncio>=0.23     # Async test support
 
 # Kinetics pipeline (specs/code/kinetics_pipeline.py) is pure standard library.
 
-# Coming with the dashboard layer:
-# streamlit>=1.35        # SCADA dashboard presentation layer
+# SCADA dashboard (dashboard/app.py)
+streamlit>=1.35          # Dashboard presentation layer
+pandas>=2.0              # Tank-level chart dataframes

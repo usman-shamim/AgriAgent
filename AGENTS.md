@@ -26,6 +26,7 @@ The hackathon pitch is one decision, not a platform. Four beats, in order:
 - @src/twin/contracts.py — shared SCADA contract (`SCADAPayload`, `PumpCommand`); single source of truth for payload schemas.
 - @src/twin/twin.py — digital twin; subscribes to `agri/actuator/+/dosing_dispatch`, recomputes runtimes from its own flow table, publishes tank status.
 - @scripts/test_publish.py — MQTT dispatcher smoke test for the contract payload.
+- @dashboard/app.py — Streamlit SCADA dashboard: live twin tank levels over MQTT plus computed recipe/dispatch preview; run `streamlit run dashboard/app.py`.
 - @tests/test_agents.py — end-to-end agent pipeline tests (ScriptedModel, no API key needed).
 - @specs/mvp-build-spec.md — the buildable MVP spec: locked decisions as acceptance criteria (the one to build against).
 - @specs/scope/hackthon-scope.md — MVP scope and acceptance boundaries (the what).
@@ -39,7 +40,3 @@ The hackathon pitch is one decision, not a platform. Four beats, in order:
 - Telemetry in: `agri/telemetry/{zone_id}/environment`
 - Actuate: `agri/actuator/{zone_id}/dosing_dispatch` (QoS 1)
 - State feedback: `agri/digital_twin/{zone_id}/tank_status`
-
-## Not yet built
-
-- @dashboard/ — Streamlit SCADA dashboard (empty placeholder).

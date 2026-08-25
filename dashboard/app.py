@@ -103,7 +103,7 @@ with st.sidebar:
     st.header("Telemetry")
     uv = st.slider("UV index", 0.0, 16.0, 9.2, 0.1)
     temp = st.slider("Temperature (°C)", -10.0, 55.0, 38.0, 0.5)
-    rh = st.slider("Relative humidity (%)", 0, 100, 32, 1)
+    rh = st.slider("Relative humidity (%)", 5, 100, 32, 1)
     batch = st.number_input("Batch volume (mL)", 100, 10_000, 500, 50)
     st.caption("Drag to re-run the pipeline")
 

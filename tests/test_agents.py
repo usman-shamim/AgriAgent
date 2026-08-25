@@ -134,3 +134,48 @@ async def test_unsafe_recipe_never_dispatches():
     assert out["safety_validated"] is False
     assert any(v["rule"] == "pump_thermal_cycle" for v in out["safety_violations"])
     assert out["payload"] is None  # no payload is emitted for a rejected dispatch
+
+
+def test_out_of_envelope_telemetry_is_rejected_loudly():
+    """Out-of-envelope telemetry fails loudly instead of yielding an approved recipe."""
+    from src.agents.tools import dispatch_scada_dosing, generate_chemical_recipe
+
+    recipe_fn = generate_chemical_recipe.__wrapped__
+    dispatch_fn = dispatch_scada_dosing.__wrapped__
+
+    bad_calls = [
+        (recipe_fn, dict(batch_volume_ml=500.0, uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=200.0)),
+        (recipe_fn, dict(batch_volume_ml=500.0, uv_index=9.2, ambient_temp_c=-300.0, relative_humidity_pct=32.0)),
+        (recipe_fn, dict(batch_volume_ml=500.0, uv_index=99.0, ambient_temp_c=38.0, relative_humidity_pct=32.0)),
+        (recipe_fn, dict(batch_volume_ml=0.0, uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=32.0)),
+        (dispatch_fn, dict(zone_id="zone_north", batch_volume_ml=500.0, uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=0.0)),
+        (dispatch_fn, dict(zone_id="zone_north", batch_volume_ml=50_000.0, uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=32.0)),
+    ]
+    for fn, kwargs in bad_calls:
+        with pytest.raises(ValueError):
+            fn(**kwargs)
+
+
+def test_safety_validator_rejects_any_negative_component():
+    """FR-3: every negative component volume is a violation, not just bio/water."""
+    from src.mcp_server_scada import RecipeResult, SafetyValidator
+
+    validator = SafetyValidator()
+    base = dict(
+        biopesticide_ml=40.0,
+        uv_stabilizer_ml=12.75,
+        surfactant_ml=0.5,
+        carrier_water_ml=446.75,
+        total_batch_volume_ml=500.0,
+        recommended_lignin_pct=2.55,
+        surfactant_pct=0.1,
+        uv_index=9.2,
+        ambient_temp_c=38.0,
+        relative_humidity_pct=32.0,
+    )
+    assert validator.validate_recipe(RecipeResult(**base)) == []
+
+    for component in ("biopesticide_ml", "uv_stabilizer_ml", "surfactant_ml", "carrier_water_ml"):
+        recipe = RecipeResult(**{**base, component: -1.0})
+        rules = [v.rule for v in validator.validate_recipe(recipe)]
+        assert "negative_volume" in rules
