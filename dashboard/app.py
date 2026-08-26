@@ -16,13 +16,20 @@ from __future__ import annotations
 import json
 import os
 import queue
+import sys
 import threading
+from pathlib import Path
 from typing import Any, Dict
 
 import pandas as pd
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 import streamlit as st
+
+# Allow `streamlit run dashboard/app.py` from the repo root: ensure the repo
+# root is importable so `src.*` resolves (same shim as src/twin/twin.py).
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.mcp_server_scada import KineticsEngine, FormulationEngine, SafetyValidator, _build_dispatch_payload
 
