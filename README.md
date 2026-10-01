@@ -1,4 +1,4 @@
-# AgriAgent
+# AGRIAGENT
 
 **Autonomous SCADA system for on-demand biopesticide formulation.**
 
