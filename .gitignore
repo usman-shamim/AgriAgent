@@ -41,3 +41,6 @@ Thumbs.db
 .ruff_cache/
 .coverage
 htmlcov/
+
+# ---- Node (deck build: docs/presentation) ----
+node_modules/

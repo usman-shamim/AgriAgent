@@ -1,0 +1,23 @@
+  [PASS] k_baseline: got=0.078508 expected~0.082
+  [PASS] half_life: got=8.829 expected~8.5
+  [PASS] f_uv: got=2.656 expected~2.6559999999999997
+  [PASS] viability_1h: got=92.4495 expected~92.12719586963487
+  [PASS] bio_l: got=0.04 expected~0.04
+  [PASS] lignin_pct: got=2.55 expected~2.55
+  [PASS] lignin_l: got=0.01275 expected~0.01275
+  [PASS] surf_pct_capped: got=0.0993 expected~0.099
+  [PASS] surf_l: got=0.000496 expected~0.0005
+  [PASS] water_l: got=0.446754 expected~0.44675000000000004
+  [PASS] rejects_overcap_surfactant: got=True expected~True
+  [PASS] violation_is_phytotoxicity: got=True expected~True
+  [PASS] pump1_duration: got=4.0 expected~4.0
+  [PASS] pump4_duration: got=8.935 expected~8.93508
+  [PASS] all_runtimes_under_30s: got=True expected~True
+  [PASS] lignin_cap: got=3.0 expected~3.0
+  [PASS] rejects_out_of_range_rh: got=True expected~True
+  [PASS] rejects_sub_absolute_zero_temp: got=True expected~True
+  [PASS] rejects_oversized_batch: got=True expected~True
+  [PASS] kinetics_rejects_out_of_range_uv: got=True expected~True
+  [PASS] rejects_negative_component_volume: got=True expected~True
+
+SELFTEST PASSED

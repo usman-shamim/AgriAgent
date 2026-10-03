@@ -1,0 +1,18 @@
+sequenceDiagram
+    autonumber
+    actor Op as Operator
+    participant A as Agent (LLM)
+    participant T as Python tools + engines
+    participant M as MQTT + Digital Twin
+
+    Op->>A: UV 9.2 · 38 °C · RH 32 % · 0.5 L
+    A->>T: compute_degradation_kinetics()
+    T-->>A: half-life 8.8 h
+    A->>T: generate_chemical_recipe()
+    T-->>A: 0.0400 / 0.0127 / 0.0005 / 0.4468 L — safe
+    A->>T: dispatch_scada_dosing()
+    T->>M: SCADAPayload at QoS 1
+    M-->>T: tanks drop, pump by pump
+    A-->>Op: dispatch complete
+
+    Note over A,T: The LLM picks the tool.<br/>Python does the math.
