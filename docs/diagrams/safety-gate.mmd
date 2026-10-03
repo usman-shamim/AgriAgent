@@ -1,0 +1,28 @@
+flowchart TD
+    A["Telemetry + batch volume"] --> B{"Inside operating envelope?<br/>UV 0-16, temp -10 to 55 C<br/>RH 5-100, batch 0-10 L"}
+    B -->|no| E1["ValueError raised<br/>rejected loudly, never silently approved"]
+    B -->|yes| C["KineticsEngine + FormulationEngine<br/>compute the recipe"]
+    C --> D{"validate_recipe"}
+
+    D -->|"surfactant over 0.20 pct"| V1["surfactant_phytotoxicity"]
+    D -->|"lignin over 3.00 pct"| V2["lignin_solubility"]
+    D -->|"component volume below 0"| V3["negative_volume"]
+    D -->|"sum does not equal batch"| V4["volume_balance"]
+    D -->|pass| G{"validate_dispatch"}
+
+    G -->|"runtime over 30 s"| V5["pump_thermal_cycle"]
+    G -->|pass| OK["safety_validated = true<br/>SCADAPayload published over MQTT"]
+
+    V1 --> REJ["safety_validated = false<br/>payload = null<br/>no MQTT publish"]
+    V2 --> REJ
+    V3 --> REJ
+    V4 --> REJ
+    V5 --> REJ
+
+    OK --> TW["Digital twin actuates<br/>one tank_status publish per pump"]
+    REJ --> NOTE["Tool returns a machine-readable<br/>safety_violations list with rule names"]
+
+    classDef verdict fill:#d4edda,stroke:#2e7d32
+    classDef bad fill:#f8d7da,stroke:#b02a37
+    class OK,TW verdict
+    class E1,V1,V2,V3,V4,V5,REJ bad

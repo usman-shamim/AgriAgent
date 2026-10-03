@@ -106,12 +106,12 @@ The AI layer runs four specialized agents orchestrated sequentially with strict 
 |                          |                                                  |
 |                          v                                                  |
 | 2. Stoichiometry & Formulation Agent                                        |
-|    - Computes recipe for target batch volume (e.g., 500 mL)                 |
-|    - Recipe: Bio=40.0 mL, Lignin=12.75 mL, Surfactant=0.50 mL, Water=446.75 |
+|    - Computes recipe for target batch volume (e.g., 0.5 L)                  |
+|    - Recipe: Bio=0.04 L, Lignin=0.01275 L, Surf=0.0005 L, Water=0.44675 L   |
 |                          |                                                  |
 |                          v                                                  |
 | 3. Safety & Compliance Agent                                                |
-|    - Validates: Surfactant conc <= 0.20%, Total Vol == 500 mL               |
+|    - Validates: Surfactant conc <= 0.20%, Total Vol == 0.5 L                |
 |    - Checks: Pump runtimes within hardware thermal thresholds (<30s)        |
 |                          |                                                  |
 |                          v                                                  |
@@ -127,7 +127,7 @@ The AI layer runs four specialized agents orchestrated sequentially with strict 
 1. **Perception Agent:** Polls the weather API or reads simulated MQTT telemetry. It validates sensor data ranges (e.g., UV Index between 0 and 15, Temperature between -10°C and 55°C) and computes the active ingredient half-life.
 2. **Stoichiometry and Formulation Agent:** Evaluates crop type, target pest density, and environmental risk metrics. It calculates exact volumetric setpoints for active biopesticide, UV stabilizer, surfactant, and carrier water.
 3. **Safety and Compliance Agent:** Acts as an automated verification barrier. It enforces agricultural safety limits (maximum active ingredient concentration, maximum surfactant threshold) and mechanical limits (tank minimum levels, max pump cycle duration).
-4. **SCADA / Actuator Agent:** Maps volumetric chemical setpoints into pump runtimes based on calibrated pump flow rates ($Q = 10.0\text{ mL/sec}$). It constructs the deterministic JSON payload and publishes it over the MQTT command topic.
+4. **SCADA / Actuator Agent:** Maps volumetric chemical setpoints into pump runtimes based on calibrated pump flow rates ($Q = 0.01\text{ L/sec}$). It constructs the deterministic JSON payload and publishes it over the MQTT command topic.
 
 ---
 
@@ -148,17 +148,17 @@ class FieldTelemetryInput(BaseModel):
     soil_moisture_pct: float = Field(ge=0.0, le=100.0, description="Volumetric soil moisture")
 
 class ChemicalRecipe(BaseModel):
-    biopesticide_ml: float = Field(ge=0.0, description="Bacillus thuringiensis or peptide active volume in mL")
-    uv_stabilizer_ml: float = Field(ge=0.0, description="Sodium lignosulfonate solution volume in mL")
-    surfactant_ml: float = Field(ge=0.0, description="Organosilicone surfactant volume in mL")
-    carrier_water_ml: float = Field(ge=0.0, description="Diluent water volume in mL")
-    total_batch_volume_ml: float = Field(gt=0.0, description="Total mix volume in mL")
+    biopesticide_l: float = Field(ge=0.0, description="Bacillus thuringiensis or peptide active volume in litres")
+    uv_stabilizer_l: float = Field(ge=0.0, description="Sodium lignosulfonate solution volume in litres")
+    surfactant_l: float = Field(ge=0.0, description="Organosilicone surfactant volume in litres")
+    carrier_water_l: float = Field(ge=0.0, description="Diluent water volume in litres")
+    total_batch_volume_l: float = Field(gt=0.0, description="Total mix volume in litres")
 
 class PumpCommand(BaseModel):
     pump_id: int = Field(ge=1, le=4, description="Hardware pump identifier")
     chemical_name: Literal["biopesticide", "uv_stabilizer", "surfactant", "carrier_water"]
-    volume_ml: float = Field(gt=0.0, description="Volume to dispense in mL")
-    flow_rate_ml_per_sec: float = Field(default=10.0, gt=0.0, description="Pump calibration flow rate")
+    volume_l: float = Field(gt=0.0, description="Volume to dispense in litres")
+    flow_rate_l_per_sec: float = Field(default=0.01, gt=0.0, description="Pump calibration flow rate")
     duration_sec: float = Field(gt=0.0, description="Calculated electrical runtime")
 
 class SCADAPayload(BaseModel):
@@ -189,40 +189,40 @@ class SCADAPayload(BaseModel):
   "zone_id": "zone_north",
   "safety_validated": true,
   "recipe": {
-    "biopesticide_ml": 40.0,
-    "uv_stabilizer_ml": 12.75,
-    "surfactant_ml": 0.5,
-    "carrier_water_ml": 446.75,
-    "total_batch_volume_ml": 500.0
+    "biopesticide_l": 0.04,
+    "uv_stabilizer_l": 0.01275,
+    "surfactant_l": 0.0005,
+    "carrier_water_l": 0.44675,
+    "total_batch_volume_l": 0.5
   },
   "commands": [
     {
       "pump_id": 1,
       "chemical_name": "biopesticide",
-      "volume_ml": 40.0,
-      "flow_rate_ml_per_sec": 10.0,
+      "volume_l": 0.04,
+      "flow_rate_l_per_sec": 0.01,
       "duration_sec": 4.0
     },
     {
       "pump_id": 2,
       "chemical_name": "uv_stabilizer",
-      "volume_ml": 12.75,
-      "flow_rate_ml_per_sec": 10.0,
-      "duration_sec": 1.27
+      "volume_l": 0.01275,
+      "flow_rate_l_per_sec": 0.01,
+      "duration_sec": 1.275
     },
     {
       "pump_id": 3,
       "chemical_name": "surfactant",
-      "volume_ml": 0.5,
-      "flow_rate_ml_per_sec": 10.0,
+      "volume_l": 0.0005,
+      "flow_rate_l_per_sec": 0.01,
       "duration_sec": 0.05
     },
     {
       "pump_id": 4,
       "chemical_name": "carrier_water",
-      "volume_ml": 446.75,
-      "flow_rate_ml_per_sec": 50.0,
-      "duration_sec": 8.94
+      "volume_l": 0.44675,
+      "flow_rate_l_per_sec": 0.05,
+      "duration_sec": 8.935
     }
   ]
 }
@@ -244,10 +244,10 @@ import paho.mqtt.client as mqtt
 class DigitalTwinSCADA:
     def __init__(self, broker_host="localhost", broker_port=1883):
         self.tanks = {
-            "biopesticide": 5000.0,   # Volume in mL
-            "uv_stabilizer": 2000.0,
-            "surfactant": 1000.0,
-            "carrier_water": 50000.0
+            "biopesticide": 5.0,   # Volume in L
+            "uv_stabilizer": 2.0,
+            "surfactant": 1.0,
+            "carrier_water": 50.0
         }
         self.mix_tank = 0.0
         self.lock = threading.Lock()
@@ -276,19 +276,19 @@ class DigitalTwinSCADA:
             commands = payload.get("commands", [])
             for cmd in commands:
                 chem = cmd["chemical_name"]
-                vol = cmd["volume_ml"]
+                vol = cmd["volume_l"]
                 dur = cmd["duration_sec"]
                 
                 if self.tanks[chem] < vol:
-                    print(f"[DIGITAL TWIN] ALARM: Low level in tank {chem}. Required: {vol} mL, Available: {self.tanks[chem]} mL")
+                    print(f"[DIGITAL TWIN] ALARM: Low level in tank {chem}. Required: {vol} L, Available: {self.tanks[chem]} L")
                     continue
 
-                print(f"[ACTUATOR] Pump {cmd['pump_id']} ({chem}) ON -> Dispensing {vol} mL over {dur}s...")
+                print(f"[ACTUATOR] Pump {cmd['pump_id']} ({chem}) ON -> Dispensing {vol} L over {dur}s...")
                 time.sleep(dur * 0.1) # Accelerated simulation factor (10x)
                 
                 self.tanks[chem] -= vol
                 self.mix_tank += vol
-                print(f"[ACTUATOR] Pump {cmd['pump_id']} ({chem}) OFF. Tank level: {self.tanks[chem]:.1f} mL")
+                print(f"[ACTUATOR] Pump {cmd['pump_id']} ({chem}) OFF. Tank level: {self.tanks[chem]:.3f} L")
 
             self._publish_state(payload["zone_id"])
 
@@ -296,8 +296,8 @@ class DigitalTwinSCADA:
         status = {
             "timestamp": time.time(),
             "zone_id": zone_id,
-            "tanks_ml": self.tanks,
-            "current_batch_ml": self.mix_tank
+            "tanks_l": self.tanks,
+            "current_batch_l": self.mix_tank
         }
         self.client.publish(f"agri/digital_twin/{zone_id}/tank_status", json.dumps(status))
 
@@ -339,41 +339,41 @@ def compute_kinetics(uv_index: float, temp_c: float, rh_pct: float):
     half_life_hrs = math.log(2) / k_deg if k_deg > 0 else 999.0
     return k_deg, half_life_hrs
 
-def calculate_recipe(batch_vol_ml: float, uv_index: float, temp_c: float, rh_pct: float) -> dict:
+def calculate_recipe(batch_vol_l: float, uv_index: float, temp_c: float, rh_pct: float) -> dict:
     # 1. Active Biopesticide Base (e.g. 8% target concentration)
-    bio_ml = batch_vol_ml * 0.08
+    bio_l = batch_vol_l * 0.08
     
     # 2. UV Stabilizer Scaling (Lignosulfonate)
     lignin_pct = min(3.0, 0.25 + (0.25 * uv_index))
-    lignin_ml = batch_vol_ml * (lignin_pct / 100.0)
+    lignin_l = batch_vol_l * (lignin_pct / 100.0)
     
     # 3. Surfactant Evaporative Scaling
     surf_pct = min(0.20, 0.05 * (1.0 + 1.2 * (1.0 - (rh_pct / 100.0))) * ((temp_c + 273.15) / 293.15)**1.5)
-    surf_ml = batch_vol_ml * (surf_pct / 100.0)
+    surf_l = batch_vol_l * (surf_pct / 100.0)
     
     # 4. Carrier Water Balance
-    water_ml = batch_vol_ml - (bio_ml + lignin_ml + surf_ml)
+    water_l = batch_vol_l - (bio_l + lignin_l + surf_l)
     
     return {
-        "biopesticide_ml": round(bio_ml, 2),
-        "uv_stabilizer_ml": round(lignin_ml, 2),
-        "surfactant_ml": round(surf_ml, 2),
-        "carrier_water_ml": round(water_ml, 2),
-        "total_batch_volume_ml": float(batch_vol_ml)
+        "biopesticide_l": round(bio_l, 6),
+        "uv_stabilizer_l": round(lignin_l, 6),
+        "surfactant_l": round(surf_l, 6),
+        "carrier_water_l": round(water_l, 6),
+        "total_batch_volume_l": float(batch_vol_l)
     }
 
 # --- MCP / SCADA ACTION TOOL ---
 def dispatch_scada_dosing(zone_id: str, recipe: dict) -> str:
     # Safety Validation Gate — surfactant concentration as % v/v vs 0.20% cap
-    surf_pct = (recipe["surfactant_ml"] / recipe["total_batch_volume_ml"]) * 100.0
+    surf_pct = (recipe["surfactant_l"] / recipe["total_batch_volume_l"]) * 100.0
     if surf_pct > 0.20:  # > 0.20% v/v hard cutoff
         return "[SAFETY ERROR] Surfactant exceeds phytotoxicity threshold (0.20%)."
     
     commands = [
-        {"pump_id": 1, "chemical_name": "biopesticide", "volume_ml": recipe["biopesticide_ml"], "flow_rate_ml_per_sec": 10.0, "duration_sec": round(recipe["biopesticide_ml"] / 10.0, 2)},
-        {"pump_id": 2, "chemical_name": "uv_stabilizer", "volume_ml": recipe["uv_stabilizer_ml"], "flow_rate_ml_per_sec": 10.0, "duration_sec": round(recipe["uv_stabilizer_ml"] / 10.0, 2)},
-        {"pump_id": 3, "chemical_name": "surfactant", "volume_ml": recipe["surfactant_ml"], "flow_rate_ml_per_sec": 10.0, "duration_sec": round(recipe["surfactant_ml"] / 10.0, 2)},
-        {"pump_id": 4, "chemical_name": "carrier_water", "volume_ml": recipe["carrier_water_ml"], "flow_rate_ml_per_sec": 50.0, "duration_sec": round(recipe["carrier_water_ml"] / 50.0, 2)}
+        {"pump_id": 1, "chemical_name": "biopesticide", "volume_l": recipe["biopesticide_l"], "flow_rate_l_per_sec": 0.01, "duration_sec": round(recipe["biopesticide_l"] / 0.01, 2)},
+        {"pump_id": 2, "chemical_name": "uv_stabilizer", "volume_l": recipe["uv_stabilizer_l"], "flow_rate_l_per_sec": 0.01, "duration_sec": round(recipe["uv_stabilizer_l"] / 0.01, 2)},
+        {"pump_id": 3, "chemical_name": "surfactant", "volume_l": recipe["surfactant_l"], "flow_rate_l_per_sec": 0.01, "duration_sec": round(recipe["surfactant_l"] / 0.01, 2)},
+        {"pump_id": 4, "chemical_name": "carrier_water", "volume_l": recipe["carrier_water_l"], "flow_rate_l_per_sec": 0.05, "duration_sec": round(recipe["carrier_water_l"] / 0.05, 2)}
     ]
     
     payload = {
@@ -389,13 +389,13 @@ def dispatch_scada_dosing(zone_id: str, recipe: dict) -> str:
     return f"[DISPATCH SUCCESS] Published {len(commands)} pump commands to {topic}"
 
 # --- REASONING EXECUTION TRIGGER ---
-def run_formulation_cycle(zone_id: str, uv: float, temp: float, rh: float, batch_size_ml: float = 500.0):
+def run_formulation_cycle(zone_id: str, uv: float, temp: float, rh: float, batch_size_l: float = 0.5):
     print(f"\n--- [AGENT CYCLE START: {zone_id}] ---")
     k_deg, half_life = compute_kinetics(uv, temp, rh)
     print(f"[PERCEPTION AGENT] Telemetry Ingested -> UV: {uv}, Temp: {temp}C, RH: {rh}%")
     print(f"[KINETICS ENGINE] Active Half-Life: {half_life:.2f} hours (k_deg: {k_deg:.4f} hr^-1)")
     
-    recipe = calculate_recipe(batch_size_ml, uv, temp, rh)
+    recipe = calculate_recipe(batch_size_l, uv, temp, rh)
     print(f"[FORMULATION AGENT] Generated Chemical Recipe: {recipe}")
     
     result = dispatch_scada_dosing(zone_id, recipe)
@@ -404,10 +404,10 @@ def run_formulation_cycle(zone_id: str, uv: float, temp: float, rh: float, batch
 
 if __name__ == "__main__":
     # Test Scenario 1: Harsh midday sun (High UV, High Temp, Dry Air)
-    run_formulation_cycle("zone_north", uv=10.5, temp=39.0, rh=28.0, batch_size_ml=500.0)
+    run_formulation_cycle("zone_north", uv=10.5, temp=39.0, rh=28.0, batch_size_l=0.5)
     
     # Test Scenario 2: Overcast morning (Low UV, Moderate Temp, High Humidity)
-    run_formulation_cycle("zone_south", uv=2.1, temp=24.0, rh=75.0, batch_size_ml=500.0)
+    run_formulation_cycle("zone_south", uv=2.1, temp=24.0, rh=75.0, batch_size_l=0.5)
 
 ```
 

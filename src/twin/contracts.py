@@ -7,6 +7,8 @@ physical rig firmware. Nothing drifts: every layer imports these models.
 Settled by wayfinder ticket #6 (Option A): sim_speed is explicit in the
 payload; duration_sec is informational only — the twin recomputes runtimes
 from its own calibrated flow table.
+
+All volumes are SI litres (L) and flows L/s.
 """
 
 from pydantic import BaseModel, Field
@@ -15,17 +17,17 @@ from datetime import datetime
 
 
 class ChemicalRecipe(BaseModel):
-    biopesticide_ml: float = Field(ge=0.0, description="Bacillus thuringiensis or peptide active volume in mL")
-    uv_stabilizer_ml: float = Field(ge=0.0, description="Sodium lignosulfonate solution volume in mL")
-    surfactant_ml: float = Field(ge=0.0, description="Organosilicone surfactant volume in mL")
-    carrier_water_ml: float = Field(ge=0.0, description="Diluent water volume in mL")
-    total_batch_volume_ml: float = Field(gt=0.0, description="Total mix volume in mL")
+    biopesticide_l: float = Field(ge=0.0, description="Bacillus thuringiensis or peptide active volume in litres")
+    uv_stabilizer_l: float = Field(ge=0.0, description="Sodium lignosulfonate solution volume in litres")
+    surfactant_l: float = Field(ge=0.0, description="Organosilicone surfactant volume in litres")
+    carrier_water_l: float = Field(ge=0.0, description="Diluent water volume in litres")
+    total_batch_volume_l: float = Field(gt=0.0, description="Total mix volume in litres")
 
 
 class PumpCommand(BaseModel):
     pump_id: int = Field(ge=1, le=4, description="Hardware pump identifier")
     chemical_name: Literal["biopesticide", "uv_stabilizer", "surfactant", "carrier_water"]
-    volume_ml: float = Field(gt=0.0, description="Volume to dispense in mL")
+    volume_l: float = Field(gt=0.0, description="Volume to dispense in litres")
     duration_sec: float = Field(gt=0.0, description="Informational runtime calculated by sender (overridden by twin calibration)")
 
 

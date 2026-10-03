@@ -1,0 +1,65 @@
+---
+id: 3dd29d82-15b5-46cf-bc71-565533989947
+---
+flowchart TB
+    subgraph PRES["Presentation layer"]
+        DASH["Streamlit dashboard<br/>dashboard/app.py"]
+        MCPC["External MCP client"]
+        TERM["Operator terminal"]
+    end
+
+    subgraph CORE["Agent core - src/agents"]
+        P["Perception Agent - LLM"]
+        F["Formulation Agent - LLM"]
+        S["SCADA Agent - LLM"]
+    end
+
+    subgraph DET["Deterministic core - src/mcp_server_scada.py"]
+        REG["TOOLS registry"]
+        KIN["KineticsEngine"]
+        FORM["FormulationEngine"]
+        SAFE["SafetyValidator"]
+        BLD["_build_dispatch_payload"]
+    end
+
+    subgraph CTR["Contract - src/twin/contracts.py"]
+        SP["SCADAPayload"]
+    end
+
+    subgraph PROTO["Protocol highway"]
+        MQ["Eclipse Mosquitto - localhost:1883"]
+    end
+
+    subgraph EDGE["Actuation layer"]
+        TWIN["Digital twin - src/twin/twin.py"]
+        RIG["ESP32 dosing rig - not built"]
+    end
+
+    TELE["Telemetry source<br/>Open-Meteo API or simulated MQTT"]
+
+    TELE --> P
+    TERM --> P
+    P -->|handoff| F
+    F -->|"handoff if safety_ok"| S
+    S --> REG
+    MCPC -->|MCP stdio| REG
+    DASH -->|"same handler, no LLM"| REG
+
+    REG --> KIN
+    REG --> FORM
+    REG --> SAFE
+    REG --> BLD
+    BLD --> SP
+    SP -->|"agri/actuator/{zone_id}/dosing_dispatch - QoS 1"| MQ
+    MQ --> TWIN
+    TWIN -->|"tank_status - retained"| MQ
+    TWIN -->|"events - transient"| MQ
+    MQ --> DASH
+    TWIN -.->|"same contract, later"| RIG
+
+    classDef llm fill:#fff3cd,stroke:#b8860b
+    classDef det fill:#d4edda,stroke:#2e7d32
+    classDef notbuilt fill:#f8d7da,stroke:#b02a37,stroke-dasharray: 5 5
+    class P,F,S llm
+    class REG,KIN,FORM,SAFE,BLD det
+    class RIG notbuilt

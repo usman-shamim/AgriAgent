@@ -1,0 +1,29 @@
+sequenceDiagram
+    autonumber
+    participant UI as Dashboard button / test_publish / pipeline
+    participant TOOL as _tool_dispatch_scada_dosing
+    participant MQ as Mosquitto :1883
+    participant TW as Digital twin
+    participant DASH as Dashboard view
+
+    UI->>TOOL: dispatch request - zone, batch, uv, temp, rh, dispatch=true
+    Note over TOOL: recipe -> validate_recipe -> validate_dispatch
+    alt safety passes
+        TOOL->>MQ: publish SCADAPayload QoS 1 to agri/actuator/zone_id/dosing_dispatch
+        MQ->>TW: delivery
+        Note over TW: validate through SCADAPayload
+        loop each pump command
+            TW->>TW: sleep volume / flow / sim_speed
+            TW->>TW: tanks_l -= volume, total_dispensed += volume
+            TW->>MQ: tank_status - retained
+            MQ->>DASH: progressive tank levels
+        end
+        TW->>MQ: events - DISPATCH_COMPLETE
+        MQ->>DASH: event row
+        TOOL-->>UI: DISPATCH SUCCESS
+    else safety fails
+        TOOL-->>UI: DISPATCH REJECTED - safety_violations, payload null
+        Note over TOOL,MQ: nothing is published, tanks do not move
+    end
+
+    Note over TW: LOW_TANK - alarm in state plus event<br/>INVALID_PAYLOAD - schema rejected<br/>SAFETY_REJECTED - flag false, no actuation

@@ -1,0 +1,56 @@
+erDiagram
+    RecipeResult ||--|| ChemicalRecipe : "5 litre fields project into"
+    SCADAPayload ||--|| ChemicalRecipe : recipe
+    SCADAPayload ||--|{ PumpCommand : commands
+
+    RecipeResult {
+        float biopesticide_l
+        float uv_stabilizer_l
+        float surfactant_l
+        float carrier_water_l
+        float total_batch_volume_l
+        float recommended_lignin_pct
+        float surfactant_pct
+        float uv_index
+        float ambient_temp_c
+        float relative_humidity_pct
+    }
+
+    ChemicalRecipe {
+        float biopesticide_l
+        float uv_stabilizer_l
+        float surfactant_l
+        float carrier_water_l
+        float total_batch_volume_l
+    }
+
+    SCADAPayload {
+        string timestamp
+        string zone_id PK
+        bool safety_validated
+        int sim_speed
+    }
+
+    PumpCommand {
+        int pump_id PK
+        string chemical_name
+        float volume_l
+        float duration_sec
+    }
+
+    TwinState {
+        float timestamp
+        string zone_id PK
+        string tanks_l
+        float current_batch_l
+        float total_dispensed_l
+        string alarms
+        string last_dispatch_id
+    }
+
+    DispatchEvent {
+        float timestamp
+        string zone_id PK
+        string code
+        string detail
+    }

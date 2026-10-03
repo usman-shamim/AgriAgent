@@ -1,0 +1,34 @@
+flowchart TB
+    CLI["python -m src.agents.pipeline"] --> RUNNER["Runner.run - Agents SDK loop"]
+
+    RUNNER --> P["Perception Agent - LLM"]
+    P -->|handoff| F["Formulation Agent - LLM"]
+    F -->|handoff if safety_ok| S["SCADA Agent - LLM"]
+
+    P --> T1["function_tool compute_degradation_kinetics"]
+    F --> T2["function_tool generate_chemical_recipe"]
+    S --> T3["function_tool dispatch_scada_dosing"]
+
+    T1 --> SH["_invoke_shared - tools.py"]
+    T2 --> SH
+    T3 --> SH
+
+    SH --> REG["TOOLS registry - src/mcp_server_scada.py"]
+
+    REG --> KIN["KineticsEngine"]
+    REG --> FORM["FormulationEngine"]
+    REG --> SAFE["SafetyValidator"]
+    REG --> PAY["_build_dispatch_payload"]
+
+    PAY --> MQTT["MQTT QoS 1"]
+    MQTT --> TWIN["Digital Twin"]
+    TWIN --> STATE["tank_status - retained"]
+    TWIN --> EVENTS["events - transient"]
+
+    REG -.->|same handlers over MCP stdio| MCPC["External MCP client"]
+    REG -.->|same handler, no LLM| DASH["Dashboard Dispatch button"]
+
+    classDef llm fill:#fff3cd,stroke:#b8860b
+    classDef det fill:#d4edda,stroke:#2e7d32
+    class P,F,S llm
+    class KIN,FORM,SAFE,PAY det

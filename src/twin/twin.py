@@ -14,6 +14,11 @@ Contract (src/twin/contracts.py, settled by wayfinder ticket #6):
     (default 10): sleep = actual_duration / sim_speed.
   - Low-tank events raise machine-readable alarms in the published state
     instead of silently skipping.
+  - State is published after EVERY pump command (not only at the end), so tank
+    levels are observable as they fall. Alarms and rejections also go out as
+    transient events on the events topic.
+
+All volumes are SI litres (L) and flows L/s.
 
 Usage:
     python -m src.twin.twin            # connect to localhost:1883
@@ -39,6 +44,10 @@ if __package__ in (None, ""):
 
 from src.twin.contracts import SCADAPayload
 
+DISPATCH_TOPIC = "agri/actuator/+/dosing_dispatch"
+STATE_TOPIC = "agri/digital_twin/{zone_id}/tank_status"
+EVENTS_TOPIC = "agri/digital_twin/{zone_id}/events"
+
 
 class TwinState:
     """State feedback schema for the digital-twin status topic (ticket #6)."""
@@ -47,15 +56,17 @@ class TwinState:
         self,
         timestamp: float,
         zone_id: str,
-        tanks_ml: Dict[str, float],
-        current_batch_ml: float,
+        tanks_l: Dict[str, float],
+        current_batch_l: float,
+        total_dispensed_l: float,
         alarms: List[str],
         last_dispatch_id: str,
     ) -> None:
         self.timestamp = timestamp
         self.zone_id = zone_id
-        self.tanks_ml = tanks_ml
-        self.current_batch_ml = current_batch_ml
+        self.tanks_l = tanks_l
+        self.current_batch_l = current_batch_l
+        self.total_dispensed_l = total_dispensed_l
         self.alarms = alarms
         self.last_dispatch_id = last_dispatch_id
 
@@ -63,8 +74,9 @@ class TwinState:
         return {
             "timestamp": self.timestamp,
             "zone_id": self.zone_id,
-            "tanks_ml": self.tanks_ml,
-            "current_batch_ml": self.current_batch_ml,
+            "tanks_l": self.tanks_l,
+            "current_batch_l": self.current_batch_l,
+            "total_dispensed_l": self.total_dispensed_l,
             "alarms": self.alarms,
             "last_dispatch_id": self.last_dispatch_id,
         }
@@ -72,23 +84,23 @@ class TwinState:
 
 class DigitalTwinSCADA:
     def __init__(self, broker_host: str = "localhost", broker_port: int = 1883):
-        # Virtual reservoir levels in mL (scope doc §6)
+        # Virtual reservoir levels in litres (scope doc §6)
         self.tanks: Dict[str, float] = {
-            "biopesticide": 5000.0,
-            "uv_stabilizer": 2000.0,
-            "surfactant": 1000.0,
-            "carrier_water": 50000.0,
+            "biopesticide": 5.0,
+            "uv_stabilizer": 2.0,
+            "surfactant": 1.0,
+            "carrier_water": 50.0,
         }
-        self.mix_tank = 0.0
+        self.total_dispensed = 0.0
         self.lock = threading.Lock()
 
-        # Twin-authoritative pump calibration (mL/sec), ticket #3/#6.
+        # Twin-authoritative pump calibration (L/sec), ticket #3/#6.
         # The sender's duration_sec is informational only — recomputed here.
         self.flow_rates: Dict[str, float] = {
-            "biopesticide": 10.0,
-            "uv_stabilizer": 10.0,
-            "surfactant": 10.0,
-            "carrier_water": 50.0,
+            "biopesticide": 0.01,
+            "uv_stabilizer": 0.01,
+            "surfactant": 0.01,
+            "carrier_water": 0.05,
         }
 
         self.client = mqtt.Client(callback_api_version=CallbackAPIVersion.VERSION2, client_id="DigitalTwinEngine")
@@ -98,19 +110,24 @@ class DigitalTwinSCADA:
 
     def on_connect(self, client, userdata, flags, reason_code, properties):
         print(f"[DIGITAL TWIN] Connected to MQTT Broker with result code: {reason_code}")
-        client.subscribe("agri/actuator/+/dosing_dispatch")
+        client.subscribe(DISPATCH_TOPIC)
 
     def on_message(self, client, userdata, msg):
+        zone_id = msg.topic.split("/")[2] if len(msg.topic.split("/")) > 2 else "unknown"
         try:
             payload = SCADAPayload(**json.loads(msg.payload.decode("utf-8")))
         except Exception as exc:
             print(f"[DIGITAL TWIN] REJECT: invalid payload ({exc})")
+            self._publish_event(zone_id, "INVALID_PAYLOAD", str(exc))
             return
 
         print(f"\n[DIGITAL TWIN] Setpoint received for Zone: {payload.zone_id}")
 
         if not payload.safety_validated:
             print("[DIGITAL TWIN] EMERGENCY REJECT: Safety verification flag false.")
+            self._publish_event(
+                payload.zone_id, "SAFETY_REJECTED", "safety_validated is false; dispatch not actuated"
+            )
             return
 
         threading.Thread(target=self._execute_dosing, args=(payload,)).start()
@@ -118,48 +135,73 @@ class DigitalTwinSCADA:
     def _execute_dosing(self, payload: SCADAPayload):
         with self.lock:
             alarms: List[str] = []
+            batch_l = 0.0
             for cmd in payload.commands:
                 chem = cmd.chemical_name
-                vol = cmd.volume_ml
+                vol = cmd.volume_l
 
                 if self.tanks[chem] < vol:
                     msg = (
-                        f"LOW_TANK {chem}: required {vol} mL, available {self.tanks[chem]:.1f} mL"
+                        f"LOW_TANK {chem}: required {vol:.4f} L, available {self.tanks[chem]:.3f} L"
                     )
                     print(f"[DIGITAL TWIN] ALARM: {msg}")
                     alarms.append(msg)
+                    self._publish_event(payload.zone_id, "LOW_TANK", msg)
+                    self._publish_state(payload.zone_id, batch_l, alarms, payload.timestamp)
                     continue
 
                 # Twin-authoritative runtime: volume / own calibrated flow rate.
-                actual_dur = vol / self.flow_rates.get(chem, 10.0)
+                actual_dur = vol / self.flow_rates.get(chem, 0.01)
                 print(
                     f"[ACTUATOR] Pump {cmd.pump_id} ({chem}) ON -> "
-                    f"Dispensing {vol} mL over {actual_dur:.2f}s (sim x{payload.sim_speed})..."
+                    f"Dispensing {vol:.4f} L over {actual_dur:.2f}s (sim x{payload.sim_speed})..."
                 )
                 time.sleep(actual_dur / payload.sim_speed)
 
                 self.tanks[chem] -= vol
-                self.mix_tank += vol
+                self.total_dispensed += vol
+                batch_l += vol
                 print(
                     f"[ACTUATOR] Pump {cmd.pump_id} ({chem}) OFF. "
-                    f"Tank level: {self.tanks[chem]:.1f} mL"
+                    f"Tank level: {self.tanks[chem]:.3f} L"
                 )
+                # Progressive feedback: one state publish per pump command.
+                self._publish_state(payload.zone_id, batch_l, alarms, payload.timestamp)
 
-            self._publish_state(payload.zone_id, alarms, payload.timestamp)
+            self._publish_event(
+                payload.zone_id, "DISPATCH_COMPLETE", f"batch {batch_l:.4f} L dispensed"
+            )
 
-    def _publish_state(self, zone_id: str, alarms: List[str], last_dispatch_id: str):
+    def _publish_state(
+        self, zone_id: str, current_batch_l: float, alarms: List[str], last_dispatch_id: str
+    ) -> None:
         state = TwinState(
             timestamp=time.time(),
             zone_id=zone_id,
-            tanks_ml=dict(self.tanks),
-            current_batch_ml=self.mix_tank,
+            tanks_l=dict(self.tanks),
+            current_batch_l=current_batch_l,
+            total_dispensed_l=self.total_dispensed,
             alarms=alarms,
             last_dispatch_id=last_dispatch_id,
         )
         self.client.publish(
-            f"agri/digital_twin/{zone_id}/tank_status",
+            STATE_TOPIC.format(zone_id=zone_id),
             json.dumps(state.to_dict()),
             retain=True,  # late-joining subscribers (e.g. the dashboard) get the current state immediately
+        )
+
+    def _publish_event(self, zone_id: str, code: str, detail: str) -> None:
+        """Transient operational events (not retained — they are history, not state)."""
+        self.client.publish(
+            EVENTS_TOPIC.format(zone_id=zone_id),
+            json.dumps(
+                {
+                    "timestamp": time.time(),
+                    "zone_id": zone_id,
+                    "code": code,
+                    "detail": detail,
+                }
+            ),
         )
 
     def start(self):

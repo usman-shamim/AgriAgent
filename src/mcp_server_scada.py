@@ -16,7 +16,9 @@ Formulas (specs/scope/hackthon-scope.md §2, specs/data/Biopesticide-Kinetics-&-
   C_lignin   = min(3.00%, 0.25% + 0.25% * UV)           (% w/v)
   V_surf     = 0.05 * (1 + 1.2*(1 - RH)) * (T/293.15)^1.5   (% v/v), capped 0.20%
   t_1/2      = ln(2) / k_dynamic
-  duration   = volume_ml / flow_rate_ml_per_sec
+  duration   = volume_l / flow_rate_l_per_sec
+
+All volumes are SI litres (L) and flows L/s.
 
 Usage:
     python mcp_server_scada.py                      # run MCP stdio server
@@ -55,16 +57,22 @@ SURF_TEMP_REF_K = 293.15        # 20 C
 SURF_MAX_PCT = 0.20             # Phytotoxicity ceiling
 
 ACTIVE_RATIO = 0.08             # Canonical active concentrate fraction of batch
-BATCH_DEFAULT_ML = 500.0
+BATCH_DEFAULT_L = 0.5
 
-# Confirmed pump calibration: pumps 1-3 at 10 mL/s, carrier water at 50 mL/s.
+# Confirmed pump calibration: pumps 1-3 at 0.01 L/s, carrier water at 0.05 L/s.
 # Duration is COMPUTED from volume / flow rate — never accepted from a caller.
-PUMP_FLOW_ML_PER_S: Dict[int, float] = {1: 10.0, 2: 10.0, 3: 10.0, 4: 50.0}
+PUMP_FLOW_L_PER_S: Dict[int, float] = {1: 0.01, 2: 0.01, 3: 0.01, 4: 0.05}
 MAX_PUMP_CYCLE_SEC = 30.0       # Safety thermal threshold per pump cycle
 
 MQTT_TOPIC = "agri/actuator/{zone_id}/dosing_dispatch"
 MQTT_BROKER_DEFAULT = os.getenv("AGRIA_MQTT_BROKER", "localhost")
 MQTT_PORT_DEFAULT = int(os.getenv("AGRIA_MQTT_PORT", "1883"))
+
+# Litre-scale rounding: 6 dp keeps sub-mL components (e.g. surfactant ~5e-4 L)
+# alive and non-zero, unlike the 2 dp that was sufficient at mL scale.
+VOLUME_DECIMALS = 6
+DURATION_DECIMALS = 3
+VOLUME_BALANCE_ABS_TOL = 1e-5   # L; ~0.01 mL, absorbs 6 dp rounding noise
 
 # Telemetry/batch operating envelope shared by every tool surface (MCP schemas,
 # SDK @function_tool engines, dashboard). The engines reject out-of-envelope
@@ -75,7 +83,7 @@ TEMP_C_MIN = -10.0
 TEMP_C_MAX = 55.0
 RH_PCT_MIN = 5.0
 RH_PCT_MAX = 100.0
-BATCH_ML_MAX = 10_000.0
+BATCH_L_MAX = 10.0
 
 
 # ---------------------------------------------------------------------------
@@ -98,11 +106,11 @@ class KineticsResult:
 
 @dataclass(frozen=True)
 class RecipeResult:
-    biopesticide_ml: float
-    uv_stabilizer_ml: float
-    surfactant_ml: float
-    carrier_water_ml: float
-    total_batch_volume_ml: float
+    biopesticide_l: float
+    uv_stabilizer_l: float
+    surfactant_l: float
+    carrier_water_l: float
+    total_batch_volume_l: float
     recommended_lignin_pct: float
     surfactant_pct: float
     uv_index: float
@@ -171,14 +179,14 @@ class FormulationEngine:
 
     def recipe(
         self,
-        batch_volume_ml: float,
+        batch_volume_l: float,
         uv_index: float,
         temp_c: float,
         rh_pct: float,
     ) -> RecipeResult:
-        if not 0.0 < batch_volume_ml <= BATCH_ML_MAX:
+        if not 0.0 < batch_volume_l <= BATCH_L_MAX:
             raise ValueError(
-                f"batch_volume_ml must be in (0, {BATCH_ML_MAX}], got {batch_volume_ml}"
+                f"batch_volume_l must be in (0, {BATCH_L_MAX}], got {batch_volume_l}"
             )
         if not UV_INDEX_MIN <= uv_index <= UV_INDEX_MAX:
             raise ValueError(
@@ -192,18 +200,18 @@ class FormulationEngine:
             raise ValueError(
                 f"relative_humidity_pct must be in [{RH_PCT_MIN}, {RH_PCT_MAX}], got {rh_pct}"
             )
-        bio_ml = batch_volume_ml * ACTIVE_RATIO
+        bio_l = batch_volume_l * ACTIVE_RATIO
         lignin_pct = self.recommended_lignin_pct(uv_index)
         surf_pct = self.surfactant_pct(rh_pct, temp_c)
-        uv_ml = batch_volume_ml * (lignin_pct / 100.0)
-        surf_ml = batch_volume_ml * (surf_pct / 100.0)
-        water_ml = batch_volume_ml - (bio_ml + uv_ml + surf_ml)
+        uv_l = batch_volume_l * (lignin_pct / 100.0)
+        surf_l = batch_volume_l * (surf_pct / 100.0)
+        water_l = batch_volume_l - (bio_l + uv_l + surf_l)
         return RecipeResult(
-            biopesticide_ml=round(bio_ml, 2),
-            uv_stabilizer_ml=round(uv_ml, 2),
-            surfactant_ml=round(surf_ml, 2),
-            carrier_water_ml=round(water_ml, 2),
-            total_batch_volume_ml=round(batch_volume_ml, 2),
+            biopesticide_l=round(bio_l, VOLUME_DECIMALS),
+            uv_stabilizer_l=round(uv_l, VOLUME_DECIMALS),
+            surfactant_l=round(surf_l, VOLUME_DECIMALS),
+            carrier_water_l=round(water_l, VOLUME_DECIMALS),
+            total_batch_volume_l=round(batch_volume_l, VOLUME_DECIMALS),
             recommended_lignin_pct=round(lignin_pct, 4),
             surfactant_pct=round(surf_pct, 4),
             uv_index=uv_index,
@@ -234,10 +242,10 @@ class SafetyValidator:
         negative_components = [
             name
             for name, volume in (
-                ("biopesticide", recipe.biopesticide_ml),
-                ("uv_stabilizer", recipe.uv_stabilizer_ml),
-                ("surfactant", recipe.surfactant_ml),
-                ("carrier_water", recipe.carrier_water_ml),
+                ("biopesticide", recipe.biopesticide_l),
+                ("uv_stabilizer", recipe.uv_stabilizer_l),
+                ("surfactant", recipe.surfactant_l),
+                ("carrier_water", recipe.carrier_water_l),
             )
             if volume < 0
         ]
@@ -250,12 +258,13 @@ class SafetyValidator:
                 )
             )
         if not math.isclose(
-            recipe.biopesticide_ml
-            + recipe.uv_stabilizer_ml
-            + recipe.surfactant_ml
-            + recipe.carrier_water_ml,
-            recipe.total_batch_volume_ml,
-            rel_tol=1e-6,
+            recipe.biopesticide_l
+            + recipe.uv_stabilizer_l
+            + recipe.surfactant_l
+            + recipe.carrier_water_l,
+            recipe.total_batch_volume_l,
+            rel_tol=1e-9,
+            abs_tol=VOLUME_BALANCE_ABS_TOL,
         ):
             violations.append(SafetyViolation("volume_balance", "component volumes do not sum to batch volume"))
         return violations
@@ -309,18 +318,18 @@ def _pydantic_schemas() -> Dict[str, type]:
         uv_index: float = Field(ge=UV_INDEX_MIN, le=UV_INDEX_MAX, description="Ambient UV Index")
         ambient_temp_c: float = Field(ge=TEMP_C_MIN, le=TEMP_C_MAX, description="Temperature in Celsius")
         relative_humidity_pct: float = Field(ge=RH_PCT_MIN, le=RH_PCT_MAX, description="Relative humidity percentage")
-        batch_volume_ml: float = Field(default=500.0, gt=0.0, le=BATCH_ML_MAX, description="Batch volume in mL")
+        batch_volume_l: float = Field(default=BATCH_DEFAULT_L, gt=0.0, le=BATCH_L_MAX, description="Batch volume in litres")
 
     class BatchRecipeInput(BaseModel):
         zone_id: str = Field(description="Field management sector identifier")
-        batch_volume_ml: float = Field(default=500.0, gt=0.0, le=BATCH_ML_MAX, description="Batch volume in mL")
+        batch_volume_l: float = Field(default=BATCH_DEFAULT_L, gt=0.0, le=BATCH_L_MAX, description="Batch volume in litres")
         uv_index: float = Field(ge=UV_INDEX_MIN, le=UV_INDEX_MAX, description="Ambient UV Index")
         ambient_temp_c: float = Field(ge=TEMP_C_MIN, le=TEMP_C_MAX, description="Temperature in Celsius")
         relative_humidity_pct: float = Field(ge=RH_PCT_MIN, le=RH_PCT_MAX, description="Relative humidity percentage")
 
     class DispatchInput(BaseModel):
         zone_id: str = Field(description="Field management sector identifier")
-        batch_volume_ml: float = Field(default=500.0, gt=0.0, le=BATCH_ML_MAX, description="Batch volume in mL")
+        batch_volume_l: float = Field(default=BATCH_DEFAULT_L, gt=0.0, le=BATCH_L_MAX, description="Batch volume in litres")
         uv_index: float = Field(ge=UV_INDEX_MIN, le=UV_INDEX_MAX, description="Ambient UV Index")
         ambient_temp_c: float = Field(ge=TEMP_C_MIN, le=TEMP_C_MAX, description="Temperature in Celsius")
         relative_humidity_pct: float = Field(ge=RH_PCT_MIN, le=RH_PCT_MAX, description="Relative humidity percentage")
@@ -357,9 +366,15 @@ def _publish_scada_payload(zone_id: str, payload: Dict[str, Any]) -> Dict[str, A
     topic = MQTT_TOPIC.format(zone_id=zone_id)
     client = mqtt.Client(client_id="AgriAgent_SCADA")
     client.connect(MQTT_BROKER_DEFAULT, MQTT_PORT_DEFAULT, 60)
-    info = client.publish(topic, json.dumps(payload), qos=1)
-    info.wait_for_publish()
-    client.disconnect()
+    # QoS 1 needs the network loop running to receive the PUBACK that
+    # wait_for_publish() waits on; without it the call blocks forever.
+    client.loop_start()
+    try:
+        info = client.publish(topic, json.dumps(payload), qos=1)
+        info.wait_for_publish()
+    finally:
+        client.loop_stop()
+        client.disconnect()
     return {"published": True, "topic": topic, "broker": f"{MQTT_BROKER_DEFAULT}:{MQTT_PORT_DEFAULT}"}
 
 
@@ -378,23 +393,23 @@ def _build_dispatch_payload(
     commands: List[Dict[str, Any]] = []
     for pump_id, (chem, volume) in enumerate(
         (
-            ("biopesticide", recipe.biopesticide_ml),
-            ("uv_stabilizer", recipe.uv_stabilizer_ml),
-            ("surfactant", recipe.surfactant_ml),
-            ("carrier_water", recipe.carrier_water_ml),
+            ("biopesticide", recipe.biopesticide_l),
+            ("uv_stabilizer", recipe.uv_stabilizer_l),
+            ("surfactant", recipe.surfactant_l),
+            ("carrier_water", recipe.carrier_water_l),
         ),
         start=1,
     ):
         if volume <= 0:
             continue
-        flow = PUMP_FLOW_ML_PER_S[pump_id]
+        flow = PUMP_FLOW_L_PER_S[pump_id]
         commands.append(
             {
                 "pump_id": pump_id,
                 "chemical_name": chem,
-                "volume_ml": round(volume, 2),
-                "flow_rate_ml_per_sec": flow,
-                "duration_sec": round(volume / flow, 2),
+                "volume_l": round(volume, VOLUME_DECIMALS),
+                "flow_rate_l_per_sec": flow,
+                "duration_sec": round(volume / flow, DURATION_DECIMALS),
             }
         )
 
@@ -404,11 +419,11 @@ def _build_dispatch_payload(
         "safety_validated": safety_validated,
         "sim_speed": sim_speed,
         "recipe": {
-            "biopesticide_ml": recipe.biopesticide_ml,
-            "uv_stabilizer_ml": recipe.uv_stabilizer_ml,
-            "surfactant_ml": recipe.surfactant_ml,
-            "carrier_water_ml": recipe.carrier_water_ml,
-            "total_batch_volume_ml": recipe.total_batch_volume_ml,
+            "biopesticide_l": recipe.biopesticide_l,
+            "uv_stabilizer_l": recipe.uv_stabilizer_l,
+            "surfactant_l": recipe.surfactant_l,
+            "carrier_water_l": recipe.carrier_water_l,
+            "total_batch_volume_l": recipe.total_batch_volume_l,
         },
         "commands": commands,
     }
@@ -445,9 +460,9 @@ def _tool_compute_degradation_kinetics(args: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _tool_generate_chemical_recipe(args: Dict[str, Any]) -> Dict[str, Any]:
-    """Formulation Agent: exact mL setpoints for the batch."""
+    """Formulation Agent: exact litre setpoints for the batch."""
     recipe = _formulation.recipe(
-        float(args["batch_volume_ml"]),
+        float(args["batch_volume_l"]),
         float(args["uv_index"]),
         float(args["ambient_temp_c"]),
         float(args["relative_humidity_pct"]),
@@ -464,7 +479,7 @@ def _tool_generate_chemical_recipe(args: Dict[str, Any]) -> Dict[str, Any]:
 def _tool_dispatch_scada_dosing(args: Dict[str, Any]) -> Dict[str, Any]:
     """Actuator Agent: compute pump runtimes, safety-gate, optionally publish."""
     recipe = _formulation.recipe(
-        float(args["batch_volume_ml"]),
+        float(args["batch_volume_l"]),
         float(args["uv_index"]),
         float(args["ambient_temp_c"]),
         float(args["relative_humidity_pct"]),
@@ -511,7 +526,7 @@ TOOLS: Dict[str, Dict[str, Any]] = {
         "handler": _tool_compute_degradation_kinetics,
     },
     "generate_chemical_recipe": {
-        "description": "Compute the exact mL recipe for biopesticide, UV stabilizer, surfactant, and carrier water (Formulation Agent).",
+        "description": "Compute the exact litre recipe for biopesticide, UV stabilizer, surfactant, and carrier water (Formulation Agent).",
         "schema_name": "recipe",
         "handler": _tool_generate_chemical_recipe,
     },
@@ -546,7 +561,7 @@ def _run_mcp_stdio() -> int:
 
         @mcp.tool()
         def generate_chemical_recipe(input: schema) -> Dict[str, Any]:  # type: ignore[misc]
-            """Compute exact mL recipe setpoints for the batch."""
+            """Compute exact litre recipe setpoints for the batch."""
             return _tool_generate_chemical_recipe(input.model_dump())
 
         @mcp.tool()
@@ -587,20 +602,20 @@ def _selftest() -> int:
     check("f_uv", kin.f_uv, 1 + 0.18 * 9.2)
     check("viability_1h", kin.viability_pct_after_1h, 100 * math.exp(-0.082), tol=0.6)
 
-    # 2. Recipe — same scenario, 500 mL batch. Confirmed: bio 40, lignin 2.55%,
+    # 2. Recipe — same scenario, 0.5 L batch. Confirmed: bio 0.04 L, lignin 2.55%,
     #    surfactant ~0.099% (capped at 0.20%), water balances.
-    rec = _formulation.recipe(500.0, 9.2, 38.0, 32.0)
-    check("bio_ml", rec.biopesticide_ml, 40.0, tol=0.01)
+    rec = _formulation.recipe(0.5, 9.2, 38.0, 32.0)
+    check("bio_l", rec.biopesticide_l, 0.04, tol=1e-6)
     check("lignin_pct", rec.recommended_lignin_pct, 2.55, tol=0.01)
-    check("lignin_ml", rec.uv_stabilizer_ml, 12.75, tol=0.05)
+    check("lignin_l", rec.uv_stabilizer_l, 0.01275, tol=1e-5)
     check("surf_pct_capped", rec.surfactant_pct, 0.099, tol=0.01)
-    check("surf_ml", rec.surfactant_ml, 0.50, tol=0.05)
-    check("water_ml", rec.carrier_water_ml, 500 - 40 - 12.75 - 0.5, tol=0.05)
+    check("surf_l", rec.surfactant_l, 0.0005, tol=1e-4)
+    check("water_l", rec.carrier_water_l, 0.5 - 0.04 - 0.01275 - 0.0005, tol=1e-4)
 
     # 3. Safety — the doc's bad example (0.9% surfactant) must be REJECTED.
     bad = RecipeResult(
-        biopesticide_ml=45.0, uv_stabilizer_ml=14.5, surfactant_ml=4.5,
-        carrier_water_ml=436.3, total_batch_volume_ml=500.0,
+        biopesticide_l=0.045, uv_stabilizer_l=0.0145, surfactant_l=0.0045,
+        carrier_water_l=0.4363, total_batch_volume_l=0.5,
         recommended_lignin_pct=2.55, surfactant_pct=0.9,
         uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=32.0,
     )
@@ -608,22 +623,22 @@ def _selftest() -> int:
     check("rejects_overcap_surfactant", len(viol) > 0, True)
     check("violation_is_phytotoxicity", any(v.rule == "surfactant_phytotoxicity" for v in viol), True)
 
-    # 4. Pump runtimes from confirmed flow table (pump 4 at 50 mL/s).
+    # 4. Pump runtimes from confirmed flow table (pump 4 at 0.05 L/s).
     payload = _build_dispatch_payload("zone_north", rec, safety_validated=True)
     durs = {c["pump_id"]: c["duration_sec"] for c in payload["commands"]}
-    check("pump1_duration", durs[1], 40.0 / 10.0, tol=0.05)
-    check("pump4_duration", durs[4], rec.carrier_water_ml / 50.0, tol=0.05)
+    check("pump1_duration", durs[1], 0.04 / 0.01, tol=0.01)
+    check("pump4_duration", durs[4], rec.carrier_water_l / 0.05, tol=0.01)
     check("all_runtimes_under_30s", max(durs.values()) <= 30.0, True)
 
     # 5. Extreme UV caps lignin at 3.00%.
-    rec_extreme = _formulation.recipe(500.0, 16.0, 38.0, 32.0)
+    rec_extreme = _formulation.recipe(0.5, 16.0, 38.0, 32.0)
     check("lignin_cap", rec_extreme.recommended_lignin_pct, 3.0, tol=0.001)
 
     # 6. Out-of-envelope inputs are rejected loudly (never silently approved).
     for label, kwargs in (
-        ("rejects_out_of_range_rh", dict(batch_volume_ml=500.0, uv_index=9.2, temp_c=38.0, rh_pct=200.0)),
-        ("rejects_sub_absolute_zero_temp", dict(batch_volume_ml=500.0, uv_index=9.2, temp_c=-300.0, rh_pct=32.0)),
-        ("rejects_oversized_batch", dict(batch_volume_ml=20_000.0, uv_index=9.2, temp_c=38.0, rh_pct=32.0)),
+        ("rejects_out_of_range_rh", dict(batch_volume_l=0.5, uv_index=9.2, temp_c=38.0, rh_pct=200.0)),
+        ("rejects_sub_absolute_zero_temp", dict(batch_volume_l=0.5, uv_index=9.2, temp_c=-300.0, rh_pct=32.0)),
+        ("rejects_oversized_batch", dict(batch_volume_l=20.0, uv_index=9.2, temp_c=38.0, rh_pct=32.0)),
         ("kinetics_rejects_out_of_range_uv", None),
     ):
         try:
@@ -638,8 +653,8 @@ def _selftest() -> int:
 
     # 7. Any negative component volume is a safety violation (FR-3).
     neg = RecipeResult(
-        biopesticide_ml=40.0, uv_stabilizer_ml=12.75, surfactant_ml=-0.05,
-        carrier_water_ml=447.3, total_batch_volume_ml=500.0,
+        biopesticide_l=0.04, uv_stabilizer_l=0.01275, surfactant_l=-0.0005,
+        carrier_water_l=0.4473, total_batch_volume_l=0.5,
         recommended_lignin_pct=2.55, surfactant_pct=-0.01,
         uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=200.0,
     )
@@ -659,7 +674,7 @@ def main() -> int:
     if args.selftest:
         return _selftest()
     if args.demo:
-        rec = _formulation.recipe(500.0, 9.2, 38.0, 32.0)
+        rec = _formulation.recipe(BATCH_DEFAULT_L, 9.2, 38.0, 32.0)
         payload = _build_dispatch_payload("zone_north", rec, safety_validated=True)
         print(json.dumps({"recipe": rec.__dict__, "dispatch": payload}, indent=2))
         return 0

@@ -47,22 +47,22 @@ def compute_degradation_kinetics(uv_index: float, ambient_temp_c: float) -> str:
 
 @function_tool
 def generate_chemical_recipe(
-    batch_volume_ml: float,
+    batch_volume_l: float,
     uv_index: float,
     ambient_temp_c: float,
     relative_humidity_pct: float,
 ) -> str:
     """Formulation Agent tool.
 
-    Compute the exact mL recipe for biopesticide, UV stabilizer, surfactant, and
-    carrier water for a batch of at most 10000 mL. Telemetry must be within the
+    Compute the exact litre recipe for biopesticide, UV stabilizer, surfactant,
+    and carrier water for a batch of at most 10 L. Telemetry must be within the
     validated envelope: UV 0-16, temperature -10 to 55 C, humidity 5-100%.
     Returns a JSON string with the recipe and safety verdict.
     """
     return _invoke_shared(
         "generate_chemical_recipe",
         {
-            "batch_volume_ml": batch_volume_ml,
+            "batch_volume_l": batch_volume_l,
             "uv_index": uv_index,
             "ambient_temp_c": ambient_temp_c,
             "relative_humidity_pct": relative_humidity_pct,
@@ -73,7 +73,7 @@ def generate_chemical_recipe(
 @function_tool
 def dispatch_scada_dosing(
     zone_id: str,
-    batch_volume_ml: float,
+    batch_volume_l: float,
     uv_index: float,
     ambient_temp_c: float,
     relative_humidity_pct: float,
@@ -82,14 +82,14 @@ def dispatch_scada_dosing(
     """SCADA Agent tool.
 
     Safety-gate the recipe, compute pump runtimes from the confirmed flow table
-    (10/10/10/50 mL/s), and (optionally) publish the SCADAPayload over MQTT to
-    agri/actuator/{zone_id}/dosing_dispatch at QoS 1. Returns a JSON string.
+    (0.01/0.01/0.01/0.05 L/s), and (optionally) publish the SCADAPayload over
+    MQTT to agri/actuator/{zone_id}/dosing_dispatch at QoS 1. Returns a JSON string.
     """
     return _invoke_shared(
         "dispatch_scada_dosing",
         {
             "zone_id": zone_id,
-            "batch_volume_ml": batch_volume_ml,
+            "batch_volume_l": batch_volume_l,
             "uv_index": uv_index,
             "ambient_temp_c": ambient_temp_c,
             "relative_humidity_pct": relative_humidity_pct,

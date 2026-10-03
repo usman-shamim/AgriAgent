@@ -1,0 +1,52 @@
+---
+id: 3db65040-cd3d-466d-bb4b-d72b194d7015
+---
+sequenceDiagram
+    autonumber
+    actor Op as Operator
+    participant CLI as pipeline.py
+    participant Runner as Runner - Agents SDK
+    participant PA as Perception Agent (LLM)
+    participant FA as Formulation Agent (LLM)
+    participant SA as SCADA Agent (LLM)
+    participant H as TOOLS handlers
+    participant E as Deterministic Engines
+    participant MQ as Mosquitto MQTT
+    participant TW as Digital Twin
+
+    Op->>CLI: python -m src.agents.pipeline --uv 9.2 --temp 38 --rh 32 --batch 0.5
+    CLI->>Runner: Runner.run(entry=Perception Agent, input=telemetry prompt)
+
+    Note over Runner,PA: Turn 1 - perception
+    Runner->>PA: telemetry prompt
+    PA->>H: compute_degradation_kinetics(uv_index, ambient_temp_c)
+    H->>E: KineticsEngine.compute
+    E-->>H: k_dynamic, half_life_hrs, viability_pct
+    H-->>PA: JSON string
+    PA->>Runner: handoff transfer_to_formulation_agent
+
+    Note over Runner,FA: Turn 2 - formulation
+    Runner->>FA: conversation history + kinetics result
+    FA->>H: generate_chemical_recipe(batch, uv, temp, rh)
+    H->>E: FormulationEngine.recipe + SafetyValidator.validate_recipe
+    E-->>H: litre recipe + safety verdict
+    H-->>FA: JSON string
+    FA->>Runner: handoff transfer_to_scada_agent - only if safety_ok
+
+    Note over Runner,SA: Turn 3 - actuation
+    Runner->>SA: conversation history + recipe + safety verdict
+    SA->>H: dispatch_scada_dosing(zone_id, batch, uv, temp, rh, dispatch)
+    H->>E: validate_recipe + validate_dispatch (30s pump cap)
+    alt safety passes
+        H->>MQ: publish SCADAPayload at QoS 1
+        MQ->>TW: agri/actuator/zone_north/dosing_dispatch
+        TW-->>MQ: tank_status after each pump + events
+    else safety fails
+        H-->>SA: safety_validated=false, payload=null
+    end
+    H-->>SA: JSON string
+    SA->>Runner: final answer
+    Runner-->>CLI: result.final_output
+    CLI-->>Op: printed agent trace
+
+    Note over PA,SA: LLM decides WHICH tool and WHEN to hand off.<br/>Every number comes from the Engines - no arithmetic in the model.

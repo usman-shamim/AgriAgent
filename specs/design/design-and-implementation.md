@@ -330,7 +330,7 @@ To captivate the evaluation panel, the developer must present a reliable, visual
 - **Local Networking**: Run a local Eclipse Mosquitto MQTT broker on the presenter's laptop and configure a dedicated Wi-Fi router. This ensures stable communication between the laptop and the ESP32, avoiding the high latency and interference of shared public venue networks.
 - **Execution Sequence**:
   1. Enter an environmental scenario on the laptop interface, such as: *"High temperature and intense UV-B index of 8.5 detected on a Pusa 1121 Basmati crop in Punjab."* Project the terminal onto the stage screen, showing the OpenAI Agents SDK processing the command. The Stoichiometry Agent reasons through the UV degradation risks, while the Safety Agent confirms that the calculated stabilizer ratio is safe.
-  2. The SCADA Agent compiles the recipe into runtimes (e.g., Pump 1: $3.2\text{s}$, Pump 2: $0.95\text{s}$, Pump 3: $0.04\text{s}$, Pump 4: $7.16\text{s}$ for a $400\text{ mL}$ batch at UV 8.5) and publishes this payload to the `agri/actuator/zone_north/dosing_dispatch` topic.
+  2. The SCADA Agent compiles the recipe into runtimes (e.g., Pump 1: $3.2\text{s}$, Pump 2: $0.95\text{s}$, Pump 3: $0.04\text{s}$, Pump 4: $7.16\text{s}$ for a $0.4\text{ L}$ batch at UV 8.5) and publishes this payload to the `agri/actuator/zone_north/dosing_dispatch` topic.
   3. The ESP32 immediately registers the payload, triggering the colored pumps. As the dyed liquids flow into the mixing beaker, the changing colors provide immediate, visual proof of the dynamic formulation process.
 
 ### Structured Three-Minute Pitch Script

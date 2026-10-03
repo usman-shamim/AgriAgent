@@ -1,0 +1,6 @@
+flowchart LR
+    T["Live weather<br/>UV index, temperature, humidity"] --> R["Agents compute<br/>the mix ratio"]
+    R --> S{"Safe for the crop?"}
+    S -->|pass| D["Dispatch over MQTT<br/>exact pump volumes"]
+    S -->|reject| X["Blocked<br/>nothing is sprayed"]
+    D --> W["Twin or rig dispenses<br/>tanks drop in real time"]

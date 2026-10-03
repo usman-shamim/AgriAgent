@@ -1,0 +1,31 @@
+sequenceDiagram
+    autonumber
+    actor Op as Operator terminal
+    participant R as Runner - Agents SDK
+    participant A as Agent - LLM
+    participant T as Python tools + engines
+    participant M as MQTT + Digital Twin
+
+    Op->>R: telemetry - UV 9.2, 38 C, RH 32 pct, 0.5 L
+    Note over A: Turn 1 - Perception
+    R->>A: run entry agent
+    A->>T: compute_degradation_kinetics(uv, temp)
+    T-->>A: k 0.0785 per hr, half-life 8.8 h, viability 92.4 pct
+
+    Note over A: Turn 2 - Formulation
+    A->>T: generate_chemical_recipe(batch, uv, temp, rh)
+    T-->>A: 0.0400 / 0.0127 / 0.0005 / 0.4468 L + safety verdict
+
+    Note over A: Turn 3 - SCADA
+    A->>T: dispatch_scada_dosing(zone, batch, uv, temp, rh, dispatch)
+    alt safety passes
+        T->>M: SCADAPayload at QoS 1
+        M-->>T: tanks drop, DISPATCH_COMPLETE
+    else safety fails
+        T-->>A: rejected, payload null, no publish
+    end
+
+    A-->>R: final answer
+    R-->>Op: agent trace
+
+    Note over A,T: The LLM chooses which tool and when to hand off.<br/>Every number comes from Python - the model never does arithmetic.

@@ -49,7 +49,7 @@ def _scripted_model():
                 function_call(
                     "generate_chemical_recipe",
                     {
-                        "batch_volume_ml": 500.0,
+                        "batch_volume_l": 0.5,
                         "uv_index": 9.2,
                         "ambient_temp_c": 38.0,
                         "relative_humidity_pct": 32.0,
@@ -70,7 +70,7 @@ def _scripted_model():
                     "dispatch_scada_dosing",
                     {
                         "zone_id": "zone_north",
-                        "batch_volume_ml": 500.0,
+                        "batch_volume_l": 0.5,
                         "uv_index": 9.2,
                         "ambient_temp_c": 38.0,
                         "relative_humidity_pct": 32.0,
@@ -94,7 +94,7 @@ async def test_full_pipeline_dispatch_preview():
         PIPELINE["entry"],
         (
             "Telemetry for zone_north: UV 9.2, temp 38C, RH 32%. "
-            "Evaluate risk, compute the 500 mL recipe, and preview the dispatch."
+            "Evaluate risk, compute the 0.5 L recipe, and preview the dispatch."
         ),
         run_config=RunConfig(model=model),
     )
@@ -110,12 +110,12 @@ async def test_dispatch_tool_emits_contract_payload():
     from src.agents.tools import dispatch_scada_dosing
 
     fn = dispatch_scada_dosing.__wrapped__
-    out = json.loads(fn("zone_north", 500.0, 9.2, 38.0, 32.0, False))
+    out = json.loads(fn("zone_north", 0.5, 9.2, 38.0, 32.0, False))
 
     assert out["safety_validated"] is True
     assert out["payload"]["zone_id"] == "zone_north"
     assert out["payload"]["commands"][0]["chemical_name"] == "biopesticide"
-    assert out["payload"]["recipe"]["biopesticide_ml"] == 40.0
+    assert out["payload"]["recipe"]["biopesticide_l"] == 0.04
 
     # The payload must validate against the canonical contract
     from src.twin.contracts import SCADAPayload
@@ -129,8 +129,8 @@ async def test_unsafe_recipe_never_dispatches():
     from src.agents.tools import dispatch_scada_dosing
 
     fn = dispatch_scada_dosing.__wrapped__
-    # A huge batch pushes the carrier-water pump runtime past the 30s thermal cap.
-    out = json.loads(fn("zone_north", 10_000.0, 9.2, 38.0, 32.0, False))
+    # A 10 L batch pushes the carrier-water pump runtime past the 30s thermal cap.
+    out = json.loads(fn("zone_north", 10.0, 9.2, 38.0, 32.0, False))
     assert out["safety_validated"] is False
     assert any(v["rule"] == "pump_thermal_cycle" for v in out["safety_violations"])
     assert out["payload"] is None  # no payload is emitted for a rejected dispatch
@@ -144,12 +144,12 @@ def test_out_of_envelope_telemetry_is_rejected_loudly():
     dispatch_fn = dispatch_scada_dosing.__wrapped__
 
     bad_calls = [
-        (recipe_fn, dict(batch_volume_ml=500.0, uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=200.0)),
-        (recipe_fn, dict(batch_volume_ml=500.0, uv_index=9.2, ambient_temp_c=-300.0, relative_humidity_pct=32.0)),
-        (recipe_fn, dict(batch_volume_ml=500.0, uv_index=99.0, ambient_temp_c=38.0, relative_humidity_pct=32.0)),
-        (recipe_fn, dict(batch_volume_ml=0.0, uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=32.0)),
-        (dispatch_fn, dict(zone_id="zone_north", batch_volume_ml=500.0, uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=0.0)),
-        (dispatch_fn, dict(zone_id="zone_north", batch_volume_ml=50_000.0, uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=32.0)),
+        (recipe_fn, dict(batch_volume_l=0.5, uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=200.0)),
+        (recipe_fn, dict(batch_volume_l=0.5, uv_index=9.2, ambient_temp_c=-300.0, relative_humidity_pct=32.0)),
+        (recipe_fn, dict(batch_volume_l=0.5, uv_index=99.0, ambient_temp_c=38.0, relative_humidity_pct=32.0)),
+        (recipe_fn, dict(batch_volume_l=0.0, uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=32.0)),
+        (dispatch_fn, dict(zone_id="zone_north", batch_volume_l=0.5, uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=0.0)),
+        (dispatch_fn, dict(zone_id="zone_north", batch_volume_l=20.0, uv_index=9.2, ambient_temp_c=38.0, relative_humidity_pct=32.0)),
     ]
     for fn, kwargs in bad_calls:
         with pytest.raises(ValueError):
@@ -162,11 +162,11 @@ def test_safety_validator_rejects_any_negative_component():
 
     validator = SafetyValidator()
     base = dict(
-        biopesticide_ml=40.0,
-        uv_stabilizer_ml=12.75,
-        surfactant_ml=0.5,
-        carrier_water_ml=446.75,
-        total_batch_volume_ml=500.0,
+        biopesticide_l=0.04,
+        uv_stabilizer_l=0.01275,
+        surfactant_l=0.0005,
+        carrier_water_l=0.44675,
+        total_batch_volume_l=0.5,
         recommended_lignin_pct=2.55,
         surfactant_pct=0.1,
         uv_index=9.2,
@@ -175,7 +175,7 @@ def test_safety_validator_rejects_any_negative_component():
     )
     assert validator.validate_recipe(RecipeResult(**base)) == []
 
-    for component in ("biopesticide_ml", "uv_stabilizer_ml", "surfactant_ml", "carrier_water_ml"):
-        recipe = RecipeResult(**{**base, component: -1.0})
+    for component in ("biopesticide_l", "uv_stabilizer_l", "surfactant_l", "carrier_water_l"):
+        recipe = RecipeResult(**{**base, component: -0.001})
         rules = [v.rule for v in validator.validate_recipe(recipe)]
         assert "negative_volume" in rules

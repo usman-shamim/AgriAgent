@@ -8,6 +8,7 @@ pydantic>=2.5            # Schema validation for telemetry/recipe/pump contracts
 
 # OpenAI Agents SDK pipeline (src/agents/)
 openai-agents>=0.22      # Agent, Runner, function_tool, handoffs; agents.testing.ScriptedModel for tests
+python-dotenv>=1.0       # Load OPENAI_API_KEY from the repo-root .env for the Runner
 
 # Tests
 pytest>=8.0              # Agent pipeline tests (tests/test_agents.py)
